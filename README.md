@@ -1,105 +1,67 @@
+<div align="center">
+
 # Hearth OS
 
-> *An agentic operating system on an Arch Linux base, where the machine is a **steward, not a tool**.*
+### The computer that works for you.
 
-You express intent; the steward materializes the exact interface the task needs, then dissolves it.
-Every action is explainable, reversible, and yours. The intelligence is a **swappable organ**; your
-memory is **legible text** you can read, edit, and forget. **The machine is yours — and stays yours.**
+You don't operate it. You just say what you want.
 
-**Status:** built in public · **Phase 1 (the runtime) is complete** and runs on a real model.
+<img src="docs/preview.png" alt="Hearth OS" width="840">
+
+</div>
 
 ---
 
-## The idea
+Today, your computer waits. You learn its menus, push its buttons, and do all the work yourself.
 
-For fifty years an operating system has been a box of tools you operate. Hearth inverts that: the
-computer becomes a counterpart you collaborate with — one that can read and change every line of
-itself, act on your behalf, learn you over time, and stay accountable to you.
+**Hearth is a computer with a mind.** A calm, capable presence that understands what you're trying to
+do — and does it. You don't open apps. You don't manage windows. You ask, and the right thing appears,
+then quietly clears away when you're done.
 
-Not the desktop (manipulating inert objects), not the chatbot (a keyhole of text), but a **shared,
-living workspace mediated by a trusted intelligence**. The breakthrough, in one line: **intent in,
-manifestation out** — and because every line is accessible, the manifestation is never a black box.
+It isn't a chatbot in a box. It's the whole machine, reimagined around you.
 
-The full thesis: **[docs/VISION-AND-ARCHITECTURE.md](docs/VISION-AND-ARCHITECTURE.md)**.
+## What it feels like
+
+#### Just ask.
+Say *“make a shared album from my trip”* or *“tidy up my downloads.”* Hearth builds exactly what the
+moment needs, does the work, and puts it away. Nothing to find, nothing to learn.
+
+#### It learns you.
+The more you use it, the better it knows you — your habits, your people, your way of doing things. And
+everything it knows is kept in plain words you can read, change, or erase. Nothing about you is hidden.
+
+#### Nothing happens behind your back.
+Before it does anything that matters, it shows you — in plain language — exactly what it's about to do,
+and asks. Anything can be undone with a single gesture. Powerful, and always answerable to you.
+
+#### It's yours.
+Use whatever AI you prefer — on your own machine, or a service you choose — and switch anytime; it
+still knows you. Every line of it is open. The machine is yours, and it stays yours.
 
 ## See it
 
-**The UI** — open **[`mockup/the-hearth.html`](mockup/the-hearth.html)** in Chrome or Edge (just
-double-click it). The definitive "Aurora" interface: an inhabited field where windows are *agent
-sessions* (not apps), attention-not-windows focus, the glass box, the living Brain. Scripted — no
-model needed.
+Open **[`mockup/the-hearth.html`](mockup/the-hearth.html)** in your browser — just double-click. It's a
+living preview of the whole experience. Nothing to install.
 
-**The runtime** — a real, headless steward:
+## The story so far
 
-```sh
-cargo run -p hearthd -- init
-cargo run -p hearthd -- do "remember I take my coffee black" --yes
-cargo run -p hearthd -- do "what do you know about me?"
-cargo run -p hearthd -- timeline      # snapshots taken before each mutating action
-cargo run -p hearthd -- undo          # one gesture reverts the last
-cargo run -p hearthd -- prompt        # the editable constitution it runs on
-```
+Hearth is being built in the open, one piece at a time. The mind underneath — the part that listens,
+plans, acts safely, and remembers — is already real and working. Where it goes next:
+**[the roadmap](ROADMAP.md)**.
 
-Point it at any OpenAI-compatible model and it reasons for real — OpenRouter, OpenAI, or a local
-llama.cpp / Ollama server:
+## Go deeper
 
-```sh
-export HEARTH_MODEL_URL=https://openrouter.ai/api/v1
-export HEARTH_MODEL_KEY=sk-...
-export HEARTH_MODEL_NAME=openai/gpt-4o-mini
-cargo run -p hearthd -- do "what files are in this folder"
-```
+The vision, the design, and the engineering are all written down in **[`docs/`](docs/)**. Start with
+**[the vision](docs/VISION-AND-ARCHITECTURE.md)** — or **[build it with us](CONTRIBUTING.md)**.
 
-## The runtime (Phase 1 — complete)
+## Open & free
 
-| Crate | What it is |
-|---|---|
-| **`hearth-brain`** | Legible, model-portable long-term memory — an LLM-wiki you can read, edit, and forget. |
-| **`hearth-model`** | The neutral model router — local / API / subscription behind one trait. |
-| **`hearth-substrate`** | Snapshot-first transactions — one-gesture `undo`. |
-| **`hearth-mcp` · `hearth-mcp-fs`** | The capability fabric, as real **MCP** (JSON-RPC) servers. |
-| **`hearthd`** | The mind: assemble context → plan (real model) → permission gate → act → audit. |
+Hearth is open source under **[GPL-3.0-or-later](LICENSE)** — copyleft by design, so it can never be
+taken private or made closed. The freedom it gives you can't be taken away.
 
-A steward that **converses with your machine, safely operates a real system with full undo, and
-learns you in the open** — proven end to end on a live LLM.
+<div align="center">
+<br>
 
-## The design canon
+*The machine is a steward, not a tool.*
 
-The *why* is written down. Start with the vision, then the soul of the UI.
-
-| Document | |
-|---|---|
-| [VISION-AND-ARCHITECTURE](docs/VISION-AND-ARCHITECTURE.md) | philosophy → the Hearth spec → purist architecture → roadmap |
-| [UI-SOUL](docs/UI-SOUL.md) | the UI design language — **read before touching the UI** |
-| [APP-MODEL](docs/APP-MODEL.md) | how apps work: adopt · strip · cohere |
-| [BROWSER-INTEGRATION](docs/BROWSER-INTEGRATION.md) | the most-used surface (engine locked: Chromium/CEF via CDP) |
-| [AGENT-TRUST-MODEL](docs/AGENT-TRUST-MODEL.md) | defeating prompt injection by design |
-| [BROWSER-B1-ARCHITECTURE](docs/BROWSER-B1-ARCHITECTURE.md) | the first real web surface |
-
-## Locked decisions
-
-- **Soul** — The Hearth: ambient presence; *intent in, manifestation out*; glass-box sovereignty.
-- **Model** — neutral: local / API / subscription are equal and swappable; no lock-in.
-- **Build** — purist: own every layer we reasonably can. The kernel + driver tree stay upstream, but
-  remain fully open and AI-patchable — that is the only boundary.
-
-## Roadmap
-
-[ROADMAP.md](ROADMAP.md). Phase 0 (soul + prototype) ✓ · Phase 1 (runtime) ✓ · **Phase 2 (the Hearth
-shell + generative surfaces) → next**.
-
-## Build
-
-Rust stable, nothing else. The target is Arch Linux; the code is cross-platform and developed on
-Windows-GNU (no Visual Studio). See [CONTRIBUTING.md](CONTRIBUTING.md) for the toolchain note.
-
-## Contributing
-
-Built in public — issues, design discussion, and PRs welcome. See **[CONTRIBUTING.md](CONTRIBUTING.md)**,
-and please read [UI-SOUL](docs/UI-SOUL.md) before any UI change.
-
-## License
-
-**[GPL-3.0-or-later](LICENSE)** — copyleft, by design. The freedom Hearth gives you can't be taken
-away downstream: no one can enclose it or ship a closed version. (The upstream kernel and drivers
-keep their own licenses.)
+</div>
