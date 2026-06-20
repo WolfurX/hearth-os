@@ -24,6 +24,8 @@ pub struct ToolSpec {
     pub args: &'static str,
     pub about: &'static str,
     pub policy: Decision,
+    /// Does this tool change state? Mutating actions are snapshotted first (undoable).
+    pub mutating: bool,
 }
 
 pub struct Registry {
@@ -34,11 +36,11 @@ impl Default for Registry {
     fn default() -> Self {
         Self {
             tools: vec![
-                ToolSpec { cap: "respond", tool: "say", args: "{ text }", about: "Answer the owner in plain words (no side effects).", policy: Decision::Auto },
-                ToolSpec { cap: "brain", tool: "recall", args: "{ query }", about: "Look up what is known about the owner.", policy: Decision::Auto },
-                ToolSpec { cap: "brain", tool: "remember", args: "{ text }", about: "Write a fact or preference to the owner's memory.", policy: Decision::Ask },
-                ToolSpec { cap: "fs", tool: "list", args: "{ path }", about: "List the files in a directory (read-only).", policy: Decision::Auto },
-                ToolSpec { cap: "fs", tool: "read", args: "{ path }", about: "Read a text file (read-only).", policy: Decision::Auto },
+                ToolSpec { cap: "respond", tool: "say", args: "{ text }", about: "Answer the owner in plain words (no side effects).", policy: Decision::Auto, mutating: false },
+                ToolSpec { cap: "brain", tool: "recall", args: "{ query }", about: "Look up what is known about the owner.", policy: Decision::Auto, mutating: false },
+                ToolSpec { cap: "brain", tool: "remember", args: "{ text }", about: "Write a fact or preference to the owner's memory.", policy: Decision::Ask, mutating: true },
+                ToolSpec { cap: "fs", tool: "list", args: "{ path }", about: "List the files in a directory (read-only).", policy: Decision::Auto, mutating: false },
+                ToolSpec { cap: "fs", tool: "read", args: "{ path }", about: "Read a text file (read-only).", policy: Decision::Auto, mutating: false },
             ],
         }
     }
@@ -52,6 +54,11 @@ impl Registry {
             .find(|t| t.cap == cap && t.tool == tool)
             .map(|t| t.policy)
             .unwrap_or(Decision::Forbid)
+    }
+
+    /// Whether a tool changes state (so the runtime snapshots before running it).
+    pub fn is_mutating(&self, cap: &str, tool: &str) -> bool {
+        self.tools.iter().find(|t| t.cap == cap && t.tool == tool).map(|t| t.mutating).unwrap_or(false)
     }
 
     /// The tool list spliced into the system prompt each turn.

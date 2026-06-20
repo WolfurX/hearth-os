@@ -14,6 +14,7 @@ resolver = "2"
 members = [
     "crates/hearth-model",
     "crates/hearth-brain",
+    "crates/hearth-substrate",
     "crates/hearthd",
 ]
 

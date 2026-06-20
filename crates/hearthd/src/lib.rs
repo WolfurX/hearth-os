@@ -14,6 +14,7 @@ use anyhow::Result;
 use capability::{Decision, Registry};
 use hearth_brain::Brain;
 use hearth_model::Model;
+use hearth_substrate::Substrate;
 use planner::{HeuristicPlanner, ModelPlanner, Planner};
 use prompt::Tier;
 use std::path::PathBuf;
@@ -23,6 +24,7 @@ pub struct Hearthd {
     pub prompt_dir: PathBuf,
     pub tier: Tier,
     pub registry: Registry,
+    pub substrate: Substrate,
 }
 
 impl Hearthd {
@@ -35,7 +37,13 @@ impl Hearthd {
             .parent()
             .map(|p| p.join("prompt"))
             .unwrap_or_else(|| PathBuf::from("prompt"));
-        Ok(Self { brain, prompt_dir, tier, registry: Registry::default() })
+        let store = brain
+            .root
+            .parent()
+            .map(|p| p.join(".substrate"))
+            .unwrap_or_else(|| PathBuf::from(".substrate"));
+        let substrate = Substrate::new(brain.root.clone(), store);
+        Ok(Self { brain, prompt_dir, tier, registry: Registry::default(), substrate })
     }
 
     /// The assembled system prompt for the active tier — the glass-box "show me what you
@@ -93,8 +101,19 @@ impl Hearthd {
                     st.capability, st.tool
                 ),
                 _ => {
-                    // (on a real install, a btrfs snapshot is taken here first)
-                    let res = self.registry.execute(&self.brain, &st.capability, &st.tool, &st.args)?;
+                    let brain = &self.brain;
+                    let reg = &self.registry;
+                    let (cap, tool, args) = (&st.capability, &st.tool, &st.args);
+                    // mutating actions snapshot first, so the gate's "approve" is reversible
+                    let res = if reg.is_mutating(cap, tool) {
+                        let (txid, r) = self
+                            .substrate
+                            .transact(&format!("{cap}.{tool}"), || reg.execute(brain, cap, tool, args))?;
+                        println!("   ✓ snapshot tx-{txid} taken first — `hearthd undo` reverts this");
+                        r
+                    } else {
+                        reg.execute(brain, cap, tool, args)?
+                    };
                     println!("   → {res}");
                     let _ = hearth_brain::log::append(
                         &self.brain.log_path(),

@@ -29,6 +29,13 @@ enum Cmd {
         /// What you want.
         intent: Vec<String>,
     },
+    /// Undo the last mutating action (or a specific transaction id).
+    Undo {
+        /// Transaction id (default: the most recent not-yet-undone).
+        id: Option<u64>,
+    },
+    /// Show the transaction timeline (snapshots taken before mutating actions).
+    Timeline,
 }
 
 fn main() -> Result<()> {
@@ -51,6 +58,19 @@ fn main() -> Result<()> {
                 anyhow::bail!("tell me what you'd like: hearthd do \"…\"");
             }
             h.run(&intent.join(" "), yes)?;
+        }
+        Cmd::Undo { id } => {
+            let t = h.substrate.undo(id)?;
+            println!("Reverted tx-{} — {} (restored the snapshot).", t.id, t.summary);
+        }
+        Cmd::Timeline => {
+            let txns = h.substrate.timeline()?;
+            if txns.is_empty() {
+                println!("No transactions yet.");
+            }
+            for t in txns {
+                println!("tx-{:<3} {}{}", t.id, t.summary, if t.undone { "  (undone)" } else { "" });
+            }
         }
     }
     Ok(())

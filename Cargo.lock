@@ -86,6 +86,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "hearth-substrate"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "hearthd"
 version = "0.1.0"
 dependencies = [
@@ -93,6 +102,7 @@ dependencies = [
  "clap",
  "hearth-brain",
  "hearth-model",
+ "hearth-substrate",
  "serde",
  "serde_json",
 ]

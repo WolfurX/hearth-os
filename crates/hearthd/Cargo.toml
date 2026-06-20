@@ -12,6 +12,7 @@ path = "src/main.rs"
 [dependencies]
 hearth-model = { path = "../hearth-model" }
 hearth-brain = { path = "../hearth-brain" }
+hearth-substrate = { path = "../hearth-substrate" }
 anyhow = "1"
 clap = { version = "4", default-features = false, features = ["std", "derive", "help", "usage", "error-context"] }
 serde = { version = "1", features = ["derive"] }
