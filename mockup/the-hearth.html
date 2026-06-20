@@ -234,6 +234,21 @@
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
   @media (prefers-reduced-motion:reduce){.presence .core,.presence .halo,.spin,.feed .cap .live,.status .heart{animation:none}}
   :focus-visible{outline:2px solid rgba(244,162,89,.7);outline-offset:2px;border-radius:8px}
+  /* live mode — a real hearthd behind the glass: the steward's plan, gated and shown */
+  .glassbox{font-size:12px;line-height:1.5;display:flex;flex-direction:column;gap:9px}
+  .gb-h{font-family:var(--serif);font-style:italic;color:var(--warm);font-size:13px;margin-bottom:1px}
+  .gb-empty{color:var(--faint);font-style:italic;font-family:var(--serif)}
+  .gb-step{border:1px solid var(--line);border-radius:12px;padding:9px 11px;background:rgba(255,255,255,.022);display:flex;flex-direction:column;gap:5px}
+  .gb-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .gb-tool{font-family:var(--mono);font-size:11.5px;color:var(--ink);background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:6px;padding:2px 7px}
+  .gb-badge{font-size:9.5px;letter-spacing:.5px;text-transform:uppercase;border-radius:999px;padding:2px 8px;border:1px solid transparent}
+  .gb-badge.auto{color:var(--ok);border-color:rgba(115,214,168,.4);background:rgba(115,214,168,.08)}
+  .gb-badge.ask{color:var(--warn);border-color:rgba(232,192,105,.4);background:rgba(232,192,105,.08)}
+  .gb-badge.forbid{color:var(--faint);border-color:var(--line);background:rgba(255,255,255,.03)}
+  .gb-snap{font-size:10.5px;color:var(--violet)}
+  .gb-why{color:var(--muted);font-family:var(--serif);font-style:italic}
+  .gb-res{font-family:var(--mono);font-size:11px;color:var(--muted);background:rgba(0,0,0,.2);border:1px solid var(--line);border-radius:8px;padding:7px 9px;white-space:pre-wrap;word-break:break-word;max-height:46vh;overflow:auto}
+  .amsg.err{color:var(--warn);background:rgba(232,192,105,.06);border-color:rgba(232,192,105,.22);font-family:var(--sans)}
 </style>
 </head>
 <body>
@@ -562,6 +577,65 @@ function wire(w,kind){
   q('[data-open="brain"]')&&(q('[data-open="brain"]').onclick=()=>summon('brain'));
 }
 
+/* ---------- live mode: a real hearthd behind the glass ----------
+   when this page is served by `hearthd serve` (http), a typed intent runs a real turn:
+   the steward plans, the gate holds anything that needs your ok, and the glass box shows
+   exactly what happened. Opened as a file:// it falls back to the scripted demo above. */
+const LIVE=/^https?:$/.test(location.protocol);
+async function api(path,body){
+  const r=await fetch(path,{method:body?'POST':'GET',headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});
+  if(!r.ok)throw new Error('runtime '+r.status);
+  return r.json();
+}
+function liveSession(intent){
+  pulse();
+  const w=document.createElement('div');w.className='win';w.dataset.kind='live';
+  w.style.left=Math.max(210,Math.min(innerWidth-460,innerWidth*0.5-220+((opened*30)%160)-60))+'px';
+  w.style.top=(120+((opened*26)%150))+'px';w.style.zIndex=++zTop;
+  w.innerHTML=`<div class="winbar"><span class="bdot"></span><span class="wt">${escapeHtml(intent)}</span><span class="wpush"></span><button class="wb" data-focus title="take the room">⤢</button><button class="wb" data-aside title="set aside">–</button><button class="wb" data-x2 title="dissolve">×</button></div><div class="winbody"><div class="agentpanel"><div class="agenthd"><span class="adot"></span><span class="ast">working…</span></div><div class="thread"></div><div class="agentsay"><input placeholder="message the agent…" data-agentinput aria-label="message the agent"/><button class="as-send" data-agentsend>↗</button></div></div><div class="appcontent"><div class="glassbox"></div></div></div>`;
+  space.appendChild(w);opened++;
+  w.animate([{opacity:0,transform:'translateY(16px) scale(.98)',filter:'blur(10px)'},{opacity:1,transform:'none',filter:'blur(0)'}],{duration:560,easing:'cubic-bezier(.2,.7,.2,1)',fill:'both'});
+  drag(w,w.querySelector('.winbar'));
+  w.addEventListener('pointerdown',()=>focusWin(w),true);
+  w.querySelector('[data-x2]').onclick=()=>closeWin(w);
+  w.querySelector('[data-aside]').onclick=()=>aside(w,'live');
+  w.querySelector('[data-focus]').onclick=()=>focusSurface(w);
+  w.querySelector('.winbar').addEventListener('dblclick',e=>{if(!e.target.closest('.wb'))focusSurface(w);});
+  const input=w.querySelector('[data-agentinput]'),send=w.querySelector('[data-agentsend]');
+  const go=()=>{const t=(input.value||'').trim();if(!t)return;input.value='';const u=document.createElement('div');u.className='umsg';u.textContent=t;w.querySelector('.thread').appendChild(u);runLive(w,t,false);};
+  send.onclick=go;input.addEventListener('keydown',e=>{if(e.key==='Enter')go();});
+  runLive(w,intent,false);
+}
+async function runLive(w,intent,approve){
+  const thread=w.querySelector('.thread'),ast=w.querySelector('.ast'),gb=w.querySelector('.glassbox');
+  if(ast)ast.textContent='working…';
+  const work=document.createElement('div');work.className='amsg thinking';
+  work.innerHTML='<span class="tdots"><i></i><i></i><i></i></span> thinking…';
+  thread.appendChild(work);thread.scrollTop=thread.scrollHeight;pulse();
+  let r;
+  try{r=await api('/api/intent',{intent,approve:!!approve});}
+  catch(e){work.classList.remove('thinking');work.classList.add('err');work.textContent="I couldn't reach the runtime — "+e.message;if(ast)ast.textContent='offline';return;}
+  work.classList.remove('thinking');
+  const held=r.steps.filter(s=>s.decision==='ask'&&!s.ran);
+  work.innerHTML=escapeHtml(r.summary||'Done.')+(r.recalled&&r.recalled.length?` <span style="color:var(--faint)">· recalled ${escapeHtml(r.recalled.join(', '))}</span>`:'');
+  renderGlass(gb,r,held.length>0,()=>runLive(w,intent,true));
+  const a=document.createElement('div');a.className='amsg';
+  if(held.length){a.innerHTML='I need your ok before I '+escapeHtml(held.map(s=>s.capability+'.'+s.tool).join(' and '))+'. <span style="color:var(--faint)">— approve in the panel →</span>';if(ast)ast.textContent='your ok?';}
+  else{const last=[...r.steps].reverse().find(s=>s.result);a.textContent=last?last.result:'Done.';if(ast)ast.textContent='done';attend(.6);}
+  thread.appendChild(a);thread.scrollTop=thread.scrollHeight;
+}
+function renderGlass(gb,r,hasHeld,onApprove){
+  if(!r.steps||!r.steps.length){gb.innerHTML='<div class="gb-empty">Nothing to do for that.</div>';return;}
+  gb.innerHTML='<div class="gb-h">the glass box · exactly what I did</div>'+r.steps.map(s=>{
+    const badge=s.decision==='forbid'?'<span class="gb-badge forbid">declined</span>':(s.decision==='ask'&&!s.ran)?'<span class="gb-badge ask">needs your ok</span>':s.decision==='ask'?'<span class="gb-badge auto">approved</span>':'<span class="gb-badge auto">acted</span>';
+    const snap=s.snapshot!=null?` <span class="gb-snap">snapshot #${s.snapshot} · undoable</span>`:'';
+    const res=s.result?`<div class="gb-res">${escapeHtml(s.result)}</div>`:'';
+    const why=s.why?`<div class="gb-why">${escapeHtml(s.why)}</div>`:'';
+    return `<div class="gb-step"><div class="gb-top"><span class="gb-tool">${escapeHtml(s.capability+'.'+s.tool)}</span> ${badge}${snap}</div>${why}${res}</div>`;
+  }).join('');
+  if(hasHeld){const b=document.createElement('button');b.className='go';b.style.marginTop='4px';b.textContent='Approve & continue';b.onclick=()=>{b.disabled=true;b.textContent='…';onApprove();};gb.appendChild(b);}
+}
+
 /* ---------- intent ---------- */
 const intent=$('#intent'),say=$('#say');
 $$('#chips .chip').forEach(c=>c.onclick=()=>summon(c.dataset.i));
@@ -569,6 +643,7 @@ function route(raw){ if(!raw||!raw.trim()) return; const v=raw.toLowerCase();
   if(/warm/.test(v)) return $('#warmer').click();
   if(/cool|dim/.test(v)) return $('#cooler').click();
   if(/voice|speak aloud|listen/.test(v)){ summon('voice'); return; }
+  if(LIVE){ liveSession(raw.trim()); return; }
   // the agent reads the task and picks the app to open first (a model would do this for real)
   const k = /japan|album|photo|trip/.test(v) ? 'japan'
     : /disk|clean|tidy|full|space|storage/.test(v) ? 'disk'
@@ -619,6 +694,9 @@ $('#toMeet').onclick=()=>{$('#b3').style.display='none';$('#b4').style.display='
 function named(n){n=(n||'Hearth').trim()||'Hearth';$('#meetLede').textContent=`I'm ${n}. Good to meet you.`;toast(`I'll answer to ${n}.`);setTimeout(()=>$('#boot').classList.remove('on'),700);}
 $('#nameGo').onclick=()=>named($('#nameIn').value);$('#nameIn').addEventListener('keydown',e=>{if(e.key==='Enter')named($('#nameIn').value);});
 $('#youPick').onclick=()=>named(['Ember','Vesta','Cinder','Hearth'][Math.floor(Math.random()*4)]);
+
+/* when served by the runtime, say so — the field is wired to a real steward */
+if(LIVE){document.body.classList.add('live');setTimeout(()=>toast('The runtime is live — type anything, and the real steward answers.'),1000);}
 </script>
 </body>
 </html>
