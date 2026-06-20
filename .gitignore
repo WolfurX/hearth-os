@@ -1,0 +1,5 @@
+/target
+**/*.rs.bk
+# Brain runtime data never lives in the source tree — it lives in the user's
+# HEARTH_HOME (default ~/.hearth) and is its own git repo. Guard against accidents:
+/.hearth

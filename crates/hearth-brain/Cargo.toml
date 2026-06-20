@@ -1,0 +1,23 @@
+[package]
+name = "hearth-brain"
+version = "0.1.0"
+description = "The Brain — Hearth OS's legible, model-portable long-term memory (an LLM-wiki)."
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "hearth-brain"
+path = "src/main.rs"
+
+[dependencies]
+hearth-model = { path = "../hearth-model" }
+anyhow = "1"
+clap = { version = "4", default-features = false, features = ["std", "derive", "help", "usage", "error-context"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+
+[features]
+default = []
+# Enable the real model-backed consolidation pass (needs a configured backend).
+online = ["hearth-model/online"]

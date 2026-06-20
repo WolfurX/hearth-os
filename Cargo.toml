@@ -1,0 +1,22 @@
+# Hearth OS — the real codebase (Phase 1+).
+#
+# This workspace is where Hearth OS stops being a mockup and becomes owned code,
+# "line by owned line." Phase 0 (the soul + the Brain concept) was validated by the
+# interactive prototype in ../hearth-os-prototype/index.html. Phase 1 begins here.
+#
+# First stake in the ground: `hearth-brain` — the Brain made real (the system's
+# legible, model-portable long-term memory). See crates/hearth-brain/README is the
+# repo README. New Phase 1 crates (hearthd, the capability fabric, the sovereignty
+# substrate) slot in alongside these as members.
+
+[workspace]
+resolver = "2"
+members = [
+    "crates/hearth-model",
+    "crates/hearth-brain",
+]
+
+[workspace.package]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "hearth-os"
