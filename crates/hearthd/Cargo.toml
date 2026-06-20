@@ -1,0 +1,23 @@
+[package]
+name = "hearthd"
+version = "0.1.0"
+description = "The Hearth agent runtime — the mind: intent → plan → act, over the Brain and the capability fabric."
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "hearthd"
+path = "src/main.rs"
+
+[dependencies]
+hearth-model = { path = "../hearth-model" }
+hearth-brain = { path = "../hearth-brain" }
+anyhow = "1"
+clap = { version = "4", default-features = false, features = ["std", "derive", "help", "usage", "error-context"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[features]
+default = []
+# Use a real model (neutral router) to produce plans, not just the offline heuristic.
+online = ["hearth-model/online"]

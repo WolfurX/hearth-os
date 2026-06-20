@@ -145,6 +145,10 @@ fn describe(name: &str) -> (String, String) {
             "Observations".into(),
             "Things the steward has noticed but not yet sorted into curated pages.".into(),
         ),
+        "activity" => (
+            "Activity".into(),
+            "What the steward has done for you — an operational log, not facts about you.".into(),
+        ),
         n if n.starts_with("people/") => {
             let who = title_case(n.trim_start_matches("people/"));
             (who.clone(), format!("Someone in your life — {who}."))

@@ -90,7 +90,10 @@ impl Schema {
             Kind::Lesson => {
                 Route::new(&format!("lessons/{}", slug(subject.unwrap_or("general"))), text)
             }
-            Kind::Interaction | Kind::Note | Kind::Action => {
+            // Operational actions are ground-truth audit, not facts about you — keep them
+            // in a separate activity log, never promoted into curated knowledge pages.
+            Kind::Action => Route::new("activity", text),
+            Kind::Interaction | Kind::Note => {
                 let low = text.to_lowercase();
                 if any_match(&self.promote.rhythms, &low) {
                     Route::new("rhythms", text)
