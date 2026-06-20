@@ -4,6 +4,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use hearthd::prompt::{self, Tier};
 use hearthd::Hearthd;
+use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(name = "hearthd", version, about = "The Hearth agent runtime — the mind.")]
@@ -36,6 +37,15 @@ enum Cmd {
     },
     /// Show the transaction timeline (snapshots taken before mutating actions).
     Timeline,
+    /// Run the local server — serves the UI and the API for the shell to drive.
+    Serve {
+        /// Address to bind.
+        #[arg(long, default_value = "127.0.0.1:7878")]
+        addr: String,
+        /// Path to the UI file (the-hearth.html) to serve at `/`.
+        #[arg(long)]
+        ui: Option<PathBuf>,
+    },
 }
 
 fn main() -> Result<()> {
@@ -71,6 +81,9 @@ fn main() -> Result<()> {
             for t in txns {
                 println!("tx-{:<3} {}{}", t.id, t.summary, if t.undone { "  (undone)" } else { "" });
             }
+        }
+        Cmd::Serve { addr, ui } => {
+            hearthd::server::serve(h, &addr, ui)?;
         }
     }
     Ok(())

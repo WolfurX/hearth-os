@@ -8,6 +8,7 @@
 pub mod capability;
 pub mod mcp;
 pub mod plan;
+pub mod server;
 pub mod planner;
 pub mod prompt;
 
@@ -103,17 +104,13 @@ impl Hearthd {
         }
     }
 
-    /// One turn of the loop.
-    pub fn run(&self, intent: &str, approve: bool) -> Result<()> {
-        // 1 · context assembly — the constitution + what we already know about the owner
+    /// One turn of the loop, as structured data — the single source of truth used by both
+    /// the CLI (`run`) and the server (`/api/intent`). Plans, gates, acts, audits.
+    pub fn turn(&self, intent: &str, approve: bool) -> Result<TurnResult> {
+        // context: the constitution + what we already know about the owner
         let system = self.system_prompt()?;
         let mem = hearth_brain::recall::recall(&self.brain.wiki_dir(), intent, 2)?;
-        if !mem.is_empty() {
-            println!(
-                "· recalled from memory: {}",
-                mem.iter().map(|h| h.page.clone()).collect::<Vec<_>>().join(", ")
-            );
-        }
+        let recalled: Vec<String> = mem.iter().map(|h| h.page.clone()).collect();
         let known = if mem.is_empty() {
             "- (nothing relevant yet)".to_string()
         } else {
@@ -122,54 +119,127 @@ impl Hearthd {
         let full_system =
             format!("{system}\n\nWhat you already know about the owner (from memory):\n{known}");
 
-        // 2 · plan — a real model if one is configured (HEARTH_MODEL_*), else the heuristic floor
+        // plan — a real model if one is configured (HEARTH_MODEL_*), else the heuristic floor
         let model = hearth_model::HttpModel::from_env().ok();
-        let plan = match &model {
-            Some(m) => {
-                println!("· planning with {}", m.id());
-                match (ModelPlanner { model: m }).plan(intent, &full_system) {
-                    Ok(p) => p,
-                    Err(e) => {
-                        eprintln!("· model planner failed ({e}); falling back to the heuristic");
-                        HeuristicPlanner.plan(intent, &full_system)?
-                    }
+        let (planner, plan) = match &model {
+            Some(m) => match (ModelPlanner { model: m }).plan(intent, &full_system) {
+                Ok(p) => (m.id().to_string(), p),
+                Err(e) => {
+                    eprintln!("· model planner failed ({e}); falling back to the heuristic");
+                    ("heuristic".to_string(), HeuristicPlanner.plan(intent, &full_system)?)
                 }
-            }
-            None => HeuristicPlanner.plan(intent, &full_system)?,
+            },
+            None => ("heuristic".to_string(), HeuristicPlanner.plan(intent, &full_system)?),
         };
 
-        // 3 · glass box — show the plan before doing anything
-        print!("{}", plan.render_plain());
-
-        // 4 · act — gated and audited
+        // act — gated, snapshotted, audited
+        let mut steps = vec![];
         for st in &plan.steps {
             let (cap, tool, args) = (st.capability.as_str(), st.tool.as_str(), &st.args);
-            match self.decide(cap, tool) {
-                Decision::Forbid => println!("   ✗ {cap}.{tool} is not permitted — skipped"),
-                Decision::Ask if !approve => {
-                    println!("   ⏸ {cap}.{tool} needs your approval — re-run with --yes to proceed")
+            let decision = self.decide(cap, tool);
+            let mut sr = StepResult {
+                capability: cap.to_string(),
+                tool: tool.to_string(),
+                why: st.why.clone(),
+                decision: format!("{decision:?}").to_lowercase(),
+                ran: false,
+                snapshot: None,
+                result: None,
+            };
+            let run_it = !matches!(decision, Decision::Forbid)
+                && !(matches!(decision, Decision::Ask) && !approve);
+            if run_it {
+                if self.mutates(cap, tool) {
+                    let (txid, r) = self
+                        .substrate
+                        .transact(&format!("{cap}.{tool}"), || self.execute_tool(cap, tool, args))?;
+                    sr.snapshot = Some(txid);
+                    sr.result = Some(r);
+                } else {
+                    sr.result = Some(self.execute_tool(cap, tool, args)?);
                 }
-                _ => {
-                    // mutating actions snapshot first, so the gate's "approve" is reversible
-                    let res = if self.mutates(cap, tool) {
-                        let (txid, r) = self
-                            .substrate
-                            .transact(&format!("{cap}.{tool}"), || self.execute_tool(cap, tool, args))?;
-                        println!("   ✓ snapshot tx-{txid} taken first — `hearthd undo` reverts this");
-                        r
-                    } else {
-                        self.execute_tool(cap, tool, args)?
-                    };
+                sr.ran = true;
+                let _ = hearth_brain::log::append(
+                    &self.brain.log_path(),
+                    hearth_brain::log::Kind::Action,
+                    &format!("hearthd ran {cap}.{tool} {args}"),
+                    vec!["hearthd".into()],
+                );
+            }
+            steps.push(sr);
+        }
+        Ok(TurnResult { recalled, planner, summary: plan.summary, steps })
+    }
+
+    /// One turn, printed for the CLI (the glass box, on the terminal).
+    pub fn run(&self, intent: &str, approve: bool) -> Result<()> {
+        let r = self.turn(intent, approve)?;
+        if !r.recalled.is_empty() {
+            println!("· recalled from memory: {}", r.recalled.join(", "));
+        }
+        if r.planner != "heuristic" {
+            println!("· planning with {}", r.planner);
+        }
+        println!("  plan · {}", r.summary);
+        for (i, s) in r.steps.iter().enumerate() {
+            let why = if s.why.is_empty() { "(no reason given)" } else { s.why.as_str() };
+            println!("   {}. {}.{} — {}", i + 1, s.capability, s.tool, why);
+            if !s.ran {
+                if s.decision == "forbid" {
+                    println!("   ✗ {}.{} is not permitted — skipped", s.capability, s.tool);
+                } else {
+                    println!("   ⏸ {}.{} needs your approval — re-run with --yes to proceed", s.capability, s.tool);
+                }
+            } else {
+                if let Some(tx) = s.snapshot {
+                    println!("   ✓ snapshot tx-{tx} taken first — `hearthd undo` reverts this");
+                }
+                if let Some(res) = &s.result {
                     println!("   → {res}");
-                    let _ = hearth_brain::log::append(
-                        &self.brain.log_path(),
-                        hearth_brain::log::Kind::Action,
-                        &format!("hearthd ran {cap}.{tool} {args}"),
-                        vec!["hearthd".into()],
-                    );
                 }
             }
         }
         Ok(())
     }
+
+    /// The Brain's curated pages, for the UI's "what do you know about me?" view.
+    pub fn brain_pages(&self) -> Result<Vec<BrainPage>> {
+        let mut out = vec![];
+        for name in hearth_brain::wiki::list(&self.brain.wiki_dir())? {
+            let path = hearth_brain::wiki::Page::path_for(&self.brain.wiki_dir(), &name);
+            let text = std::fs::read_to_string(&path).unwrap_or_default();
+            let bullets: Vec<String> = text
+                .lines()
+                .filter_map(|l| l.trim().strip_prefix("- ").map(|s| s.to_string()))
+                .collect();
+            out.push(BrainPage { name, bullets });
+        }
+        Ok(out)
+    }
+}
+
+/// The result of one turn — what the steward recalled, planned, and did.
+#[derive(serde::Serialize)]
+pub struct TurnResult {
+    pub recalled: Vec<String>,
+    pub planner: String,
+    pub summary: String,
+    pub steps: Vec<StepResult>,
+}
+
+#[derive(serde::Serialize)]
+pub struct StepResult {
+    pub capability: String,
+    pub tool: String,
+    pub why: String,
+    pub decision: String,
+    pub ran: bool,
+    pub snapshot: Option<u64>,
+    pub result: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+pub struct BrainPage {
+    pub name: String,
+    pub bullets: Vec<String>,
 }
