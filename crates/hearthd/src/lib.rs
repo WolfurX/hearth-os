@@ -13,7 +13,8 @@ pub mod prompt;
 use anyhow::Result;
 use capability::{Decision, Registry};
 use hearth_brain::Brain;
-use planner::{HeuristicPlanner, Planner};
+use hearth_model::Model;
+use planner::{HeuristicPlanner, ModelPlanner, Planner};
 use prompt::Tier;
 use std::path::PathBuf;
 
@@ -62,8 +63,21 @@ impl Hearthd {
         let full_system =
             format!("{system}\n\nWhat you already know about the owner (from memory):\n{known}");
 
-        // 2 · plan — offline heuristic floor; a model planner slots in behind the same trait
-        let plan = HeuristicPlanner.plan(intent, &full_system)?;
+        // 2 · plan — a real model if one is configured (HEARTH_MODEL_*), else the heuristic floor
+        let model = hearth_model::HttpModel::from_env().ok();
+        let plan = match &model {
+            Some(m) => {
+                println!("· planning with {}", m.id());
+                match (ModelPlanner { model: m }).plan(intent, &full_system) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        eprintln!("· model planner failed ({e}); falling back to the heuristic");
+                        HeuristicPlanner.plan(intent, &full_system)?
+                    }
+                }
+            }
+            None => HeuristicPlanner.plan(intent, &full_system)?,
+        };
 
         // 3 · glass box — show the plan before doing anything
         print!("{}", plan.render_plain());

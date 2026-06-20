@@ -19,5 +19,3 @@ toml = "0.8"
 
 [features]
 default = []
-# Enable the real model-backed consolidation pass (needs a configured backend).
-online = ["hearth-model/online"]

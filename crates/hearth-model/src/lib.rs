@@ -1,18 +1,16 @@
 //! # hearth-model — the neutral model router
 //!
-//! Hearth OS is model-agnostic to its core: *"no model is the master."* Local, API,
-//! and subscription backends are equal first-class citizens, each implementing the
-//! [`Model`] trait, and nothing above the router knows or cares which is active.
-//! Swapping the model is a settings change, never a reinstall — and because the
-//! Brain (`hearth-brain`) is externalized text, your accumulated knowledge survives
-//! the swap.
+//! Hearth OS is model-agnostic to its core: *"no model is the master."* Local, API, and
+//! subscription backends are equal first-class citizens, each implementing the [`Model`]
+//! trait, and nothing above the router knows or cares which is active. Swapping the model
+//! is a settings change, never a reinstall — and because the Brain is externalized text,
+//! accumulated knowledge survives the swap.
 //!
-//! The base build is pure-Rust and fully offline (see [`MockModel`]). A real HTTP
-//! backend — OpenAI / Anthropic / any local llama.cpp-class server speaking a
-//! compatible API — lives behind the `online` feature so it never bloats or blocks
-//! an offline build.
+//! [`MockModel`] is an offline, dependency-free stand-in. [`HttpModel`] talks to any
+//! OpenAI-compatible endpoint (OpenRouter, OpenAI, a local llama.cpp/Ollama server) by
+//! shelling out to `curl` — deliberately, so the build needs no Rust TLS stack.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 /// One request to a model: system instructions + the prompt, with sampling knobs.
 #[derive(Debug, Clone)]
@@ -34,20 +32,17 @@ impl Completion {
     }
 }
 
-/// The neutral interface every backend implements. This is the seam that makes the
-/// intelligence a swappable organ.
+/// The neutral interface every backend implements — the seam that makes the intelligence
+/// a swappable organ.
 pub trait Model: Send + Sync {
-    /// A stable identifier for audit/logging (e.g. `"mock"`, `"http:claude-…"`).
+    /// A stable identifier for audit/logging (e.g. `"mock"`, `"http:openai/gpt-4o-mini"`).
     fn id(&self) -> &str;
     /// Complete a request, returning the model's text.
     fn complete(&self, req: &Completion) -> Result<String>;
 }
 
-/// An offline, dependency-free stand-in. It is **not** intelligent — it exists so
-/// the trait/router seam is exercised with zero setup, and so components that take a
-/// `&dyn Model` can be unit-tested without a network or a key. Components that need
-/// real reasoning (e.g. the Brain's model-backed consolidation) degrade to their own
-/// offline path when only the mock is available.
+/// An offline, dependency-free stand-in. Not intelligent — it exists so the trait/router
+/// seam can be exercised with zero setup, and components can be tested without a network.
 pub struct MockModel {
     id: String,
 }
@@ -69,16 +64,13 @@ impl Model for MockModel {
         &self.id
     }
     fn complete(&self, req: &Completion) -> Result<String> {
-        // Deterministic echo of the first prompt line — enough to prove the wiring.
         let first = req.prompt.lines().next().unwrap_or("").trim();
         Ok(format!("[{}] {}", self.id, first))
     }
 }
 
-/// The router holds the active backend. Policy routing ("keep anything touching
-/// personal files on the local model; escalate hard reasoning to the API") and
-/// graceful degradation are future extensions; the trait boundary already makes them
-/// additive rather than invasive.
+/// The router holds the active backend. Policy routing and graceful degradation are future
+/// extensions; the trait boundary already makes them additive.
 pub struct Router {
     active: Box<dyn Model>,
 }
@@ -87,90 +79,110 @@ impl Router {
     pub fn new(active: Box<dyn Model>) -> Self {
         Self { active }
     }
-
-    /// A router backed by the offline mock — the default when nothing is configured.
     pub fn offline() -> Self {
         Self::new(Box::new(MockModel::new()))
     }
-
     pub fn active(&self) -> &dyn Model {
         self.active.as_ref()
     }
-
     pub fn id(&self) -> &str {
         self.active.id()
     }
 }
 
-#[cfg(feature = "online")]
-pub mod http {
-    //! A real backend speaking the OpenAI-compatible `/chat/completions` shape, which
-    //! Anthropic-compatible gateways, vLLM, llama.cpp's server, Ollama, and LM Studio
-    //! all expose. Configured by environment so no secret is ever baked into the
-    //! binary:
-    //!
-    //! ```text
-    //! HEARTH_MODEL_URL   e.g. http://localhost:11434/v1   (a local server)
-    //! HEARTH_MODEL_KEY   bearer token (omit for keyless local servers)
-    //! HEARTH_MODEL_NAME  e.g. llama3.1 / claude-… / gpt-…
-    //! ```
-    use super::{Completion, Model};
-    use anyhow::{Context, Result};
-    use serde_json::json;
+/// A real backend over any OpenAI-compatible `/chat/completions` endpoint — OpenRouter,
+/// OpenAI, a local llama.cpp/Ollama server, etc. Configured by environment so no secret is
+/// ever baked into the binary:
+///
+/// ```text
+/// HEARTH_MODEL_URL    e.g. https://openrouter.ai/api/v1
+/// HEARTH_MODEL_KEY    bearer token (omit for keyless local servers)
+/// HEARTH_MODEL_NAME   e.g. openai/gpt-4o-mini
+/// ```
+///
+/// The request is made by shelling out to `curl` — on purpose, so the lean build needs no
+/// Rust TLS stack (and thus no C toolchain). `curl` ships with Windows 10+/11 and every
+/// Linux; a native client can replace this later without changing any caller.
+pub struct HttpModel {
+    id: String,
+    url: String,
+    key: Option<String>,
+    model: String,
+}
 
-    pub struct OpenAiCompatModel {
-        id: String,
-        url: String,
-        key: Option<String>,
-        model: String,
-        client: reqwest::blocking::Client,
+impl HttpModel {
+    /// Build from the `HEARTH_MODEL_*` environment variables.
+    pub fn from_env() -> Result<Self> {
+        let url = std::env::var("HEARTH_MODEL_URL").context("HEARTH_MODEL_URL not set")?;
+        let model = std::env::var("HEARTH_MODEL_NAME").context("HEARTH_MODEL_NAME not set")?;
+        let key = std::env::var("HEARTH_MODEL_KEY").ok();
+        Ok(Self {
+            id: format!("http:{model}"),
+            url: url.trim_end_matches('/').to_string(),
+            key,
+            model,
+        })
     }
+}
 
-    impl OpenAiCompatModel {
-        /// Build from the `HEARTH_MODEL_*` environment variables.
-        pub fn from_env() -> Result<Self> {
-            let url = std::env::var("HEARTH_MODEL_URL").context("HEARTH_MODEL_URL not set")?;
-            let model = std::env::var("HEARTH_MODEL_NAME").context("HEARTH_MODEL_NAME not set")?;
-            let key = std::env::var("HEARTH_MODEL_KEY").ok();
-            Ok(Self {
-                id: format!("http:{model}"),
-                url: url.trim_end_matches('/').to_string(),
-                key,
-                model,
-                client: reqwest::blocking::Client::new(),
-            })
-        }
+impl Model for HttpModel {
+    fn id(&self) -> &str {
+        &self.id
     }
+    fn complete(&self, req: &Completion) -> Result<String> {
+        use std::io::Write;
+        use std::process::{Command, Stdio};
 
-    impl Model for OpenAiCompatModel {
-        fn id(&self) -> &str {
-            &self.id
+        let endpoint = format!("{}/chat/completions", self.url);
+        let body = serde_json::json!({
+            "model": self.model,
+            "temperature": req.temperature,
+            "max_tokens": req.max_tokens,
+            "messages": [
+                { "role": "system", "content": req.system },
+                { "role": "user", "content": req.prompt },
+            ],
+        });
+        let body = serde_json::to_string(&body)?;
+
+        let mut cmd = Command::new("curl");
+        cmd.arg("-sS")
+            .arg("-X")
+            .arg("POST")
+            .arg(&endpoint)
+            .arg("-H")
+            .arg("Content-Type: application/json")
+            .arg("-H")
+            .arg("HTTP-Referer: https://hearth.local")
+            .arg("-H")
+            .arg("X-Title: Hearth OS");
+        if let Some(k) = &self.key {
+            cmd.arg("-H").arg(format!("Authorization: Bearer {k}"));
         }
-        fn complete(&self, req: &Completion) -> Result<String> {
-            let endpoint = format!("{}/chat/completions", self.url);
-            let body = json!({
-                "model": self.model,
-                "temperature": req.temperature,
-                "max_tokens": req.max_tokens,
-                "messages": [
-                    { "role": "system", "content": req.system },
-                    { "role": "user", "content": req.prompt },
-                ],
-            });
-            let mut r = self.client.post(&endpoint).json(&body);
-            if let Some(k) = &self.key {
-                r = r.bearer_auth(k);
-            }
-            let resp = r.send().context("model request failed")?;
-            let status = resp.status();
-            let v: serde_json::Value = resp.json().context("model response was not JSON")?;
-            if !status.is_success() {
-                anyhow::bail!("model backend returned {status}: {v}");
-            }
-            let text = v["choices"][0]["message"]["content"]
-                .as_str()
-                .context("unexpected response shape (no choices[0].message.content)")?;
-            Ok(text.to_string())
+        cmd.arg("--data-binary")
+            .arg("@-")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        let mut child = cmd.spawn().context("failed to run `curl` (is it installed?)")?;
+        {
+            let mut si = child.stdin.take().context("could not open curl stdin")?;
+            si.write_all(body.as_bytes())?;
+        } // drop closes stdin so curl sends and finishes
+        let out = child.wait_with_output()?;
+        if !out.status.success() {
+            anyhow::bail!("curl failed: {}", String::from_utf8_lossy(&out.stderr));
         }
+        let v: serde_json::Value = serde_json::from_slice(&out.stdout).with_context(|| {
+            format!("model response was not JSON: {}", String::from_utf8_lossy(&out.stdout))
+        })?;
+        if let Some(err) = v.get("error") {
+            anyhow::bail!("model API error: {err}");
+        }
+        v["choices"][0]["message"]["content"]
+            .as_str()
+            .map(|s| s.to_string())
+            .with_context(|| format!("unexpected response shape: {v}"))
     }
 }

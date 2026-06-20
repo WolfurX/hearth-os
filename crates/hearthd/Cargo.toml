@@ -19,5 +19,3 @@ serde_json = "1"
 
 [features]
 default = []
-# Use a real model (neutral router) to produce plans, not just the offline heuristic.
-online = ["hearth-model/online"]

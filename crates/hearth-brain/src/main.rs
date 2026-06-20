@@ -183,15 +183,10 @@ fn append_guarded(brain: &Brain, kind: Kind, text: &str, tags: Vec<String>) -> R
 /// Neutral by construction: use a real model if one is configured, else degrade to
 /// the offline heuristic compiler. Same pipeline either way.
 fn run_compile(brain: &Brain) -> Result<compile::CompileReport> {
-    #[cfg(feature = "online")]
-    {
-        if std::env::var("HEARTH_MODEL_URL").is_ok() {
-            match hearth_model::http::OpenAiCompatModel::from_env() {
-                Ok(model) => {
-                    return compile::consolidate(brain, &compile::ModelCompiler { model: &model });
-                }
-                Err(e) => eprintln!("(model backend unavailable: {e}; using heuristic)"),
-            }
+    if std::env::var("HEARTH_MODEL_URL").is_ok() {
+        match hearth_model::HttpModel::from_env() {
+            Ok(model) => return compile::consolidate(brain, &compile::ModelCompiler { model: &model }),
+            Err(e) => eprintln!("(model backend unavailable: {e}; using heuristic)"),
         }
     }
     compile::consolidate(brain, &compile::HeuristicCompiler)
