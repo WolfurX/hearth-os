@@ -7,6 +7,23 @@ use anyhow::Result;
 use hearth_model::{Completion, Model};
 use serde_json::json;
 
+/// Does a token look like a file path or a `name.ext`? (for the offline planner's
+/// best-effort path extraction — a real model would do this properly).
+fn looks_like_path(t: &str) -> bool {
+    t.contains('/')
+        || t.contains('\\')
+        || (t.contains('.')
+            && !t.ends_with('.')
+            && t.rsplit('.').next().map_or(false, |e| !e.is_empty() && e.len() <= 5 && e.chars().all(|c| c.is_alphanumeric())))
+}
+
+fn extract_path(s: &str) -> Option<String> {
+    s.split_whitespace()
+        .map(|t| t.trim_matches(|c: char| c == '"' || c == '\'' || c == ',' || c == '?'))
+        .find(|t| looks_like_path(t))
+        .map(|t| t.to_string())
+}
+
 pub trait Planner {
     fn plan(&self, intent: &str, system: &str) -> Result<Plan>;
 }
@@ -39,6 +56,20 @@ impl Planner for HeuristicPlanner {
                 tool: "recall".into(),
                 args: json!({ "query": intent.trim() }),
                 why: "the owner asked what is known".into(),
+            }
+        } else if (v.contains("read ") || v.contains("open the file")) && extract_path(intent).is_some() {
+            Step {
+                capability: "fs".into(),
+                tool: "read".into(),
+                args: json!({ "path": extract_path(intent).unwrap() }),
+                why: "the owner asked to read a file".into(),
+            }
+        } else if v.contains("list") || v.contains("files") || v.contains("folder") || v.contains("directory") || v.contains("what's here") {
+            Step {
+                capability: "fs".into(),
+                tool: "list".into(),
+                args: json!({ "path": extract_path(intent).unwrap_or_else(|| ".".into()) }),
+                why: "the owner asked what's in a folder".into(),
             }
         } else {
             Step {
