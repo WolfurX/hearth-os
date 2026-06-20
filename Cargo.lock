@@ -77,6 +77,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "hearth-mcp"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "hearth-mcp-fs"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "hearth-mcp",
+ "serde_json",
+]
+
+[[package]]
 name = "hearth-model"
 version = "0.1.0"
 dependencies = [
@@ -101,6 +119,7 @@ dependencies = [
  "anyhow",
  "clap",
  "hearth-brain",
+ "hearth-mcp",
  "hearth-model",
  "hearth-substrate",
  "serde",

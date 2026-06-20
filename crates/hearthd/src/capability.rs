@@ -39,8 +39,6 @@ impl Default for Registry {
                 ToolSpec { cap: "respond", tool: "say", args: "{ text }", about: "Answer the owner in plain words (no side effects).", policy: Decision::Auto, mutating: false },
                 ToolSpec { cap: "brain", tool: "recall", args: "{ query }", about: "Look up what is known about the owner.", policy: Decision::Auto, mutating: false },
                 ToolSpec { cap: "brain", tool: "remember", args: "{ text }", about: "Write a fact or preference to the owner's memory.", policy: Decision::Ask, mutating: true },
-                ToolSpec { cap: "fs", tool: "list", args: "{ path }", about: "List the files in a directory (read-only).", policy: Decision::Auto, mutating: false },
-                ToolSpec { cap: "fs", tool: "read", args: "{ path }", about: "Read a text file (read-only).", policy: Decision::Auto, mutating: false },
             ],
         }
     }
@@ -59,6 +57,11 @@ impl Registry {
     /// Whether a tool changes state (so the runtime snapshots before running it).
     pub fn is_mutating(&self, cap: &str, tool: &str) -> bool {
         self.tools.iter().find(|t| t.cap == cap && t.tool == tool).map(|t| t.mutating).unwrap_or(false)
+    }
+
+    /// Is this an in-process tool we serve directly (vs. an MCP-federated one)?
+    pub fn knows(&self, cap: &str, tool: &str) -> bool {
+        self.tools.iter().any(|t| t.cap == cap && t.tool == tool)
     }
 
     /// The tool list spliced into the system prompt each turn.
@@ -105,30 +108,6 @@ impl Registry {
                     vec![],
                 )?;
                 Ok(format!("remembered (#{}) — a Brain compile will fold it into the wiki", ev.id))
-            }
-            ("fs", "list") => {
-                let p = { let x = s("path"); if x.is_empty() { ".".to_string() } else { x } };
-                let mut out = vec![];
-                for entry in std::fs::read_dir(&p).map_err(|e| anyhow::anyhow!("can't list {p}: {e}"))? {
-                    let entry = entry?;
-                    let slash = if entry.path().is_dir() { "/" } else { "" };
-                    out.push(format!("{}{slash}", entry.file_name().to_string_lossy()));
-                    if out.len() >= 60 {
-                        break;
-                    }
-                }
-                out.sort();
-                Ok(format!("{} item(s) in {p}:  {}", out.len(), out.join("  ")))
-            }
-            ("fs", "read") => {
-                let p = s("path");
-                if p.is_empty() {
-                    anyhow::bail!("no file path given");
-                }
-                let text = std::fs::read_to_string(&p).map_err(|e| anyhow::anyhow!("can't read {p}: {e}"))?;
-                let snippet: String = text.chars().take(1200).collect();
-                let more = if text.len() > snippet.len() { "\n… (truncated)" } else { "" };
-                Ok(format!("{p} ({} bytes):\n{snippet}{more}", text.len()))
             }
             _ => anyhow::bail!("unknown or unpermitted tool {cap}.{tool}"),
         }

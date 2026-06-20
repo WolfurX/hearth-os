@@ -1,0 +1,15 @@
+[package]
+name = "hearth-mcp-fs"
+version = "0.1.0"
+description = "An MCP server exposing the filesystem (read-only) as Hearth capabilities."
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "hearth-mcp-fs"
+path = "src/main.rs"
+
+[dependencies]
+hearth-mcp = { path = "../hearth-mcp" }
+anyhow = "1"
+serde_json = "1"
