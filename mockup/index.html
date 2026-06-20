@@ -1,0 +1,965 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Hearth OS — interactive prototype</title>
+<style>
+  :root{
+    --bg0:#08080b; --bg1:#100e14; --screen0:#0d0c12; --screen1:#15121b;
+    --ink:#efe9e2; --muted:#a59c92; --faint:#6f675f;
+    --ember:#f0a35e; --ember2:#ff7d4a; --ember-glow:rgba(240,163,94,.18);
+    --card:rgba(255,255,255,.045); --card2:rgba(255,255,255,.07); --line:rgba(255,255,255,.10);
+    --ok:#84d3a6; --warn:#e8c069; --info:#86b8e6;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --serif:ui-serif,Georgia,"Iowan Old Style","Times New Roman",serif;
+    --radius:18px;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;font-family:var(--sans);color:var(--ink);
+    background:
+      radial-gradient(1200px 700px at 70% -10%, rgba(240,163,94,.08), transparent 60%),
+      radial-gradient(900px 600px at 10% 110%, rgba(120,130,200,.06), transparent 55%),
+      linear-gradient(160deg,var(--bg1),var(--bg0));
+    -webkit-font-smoothing:antialiased; overflow:hidden;
+  }
+  .app{height:100vh;display:flex;flex-direction:column}
+
+  /* ---------- prototype chrome (outside the simulated screen) ---------- */
+  .chrome{
+    display:flex;align-items:center;gap:18px;padding:12px 20px;flex-wrap:wrap;
+    border-bottom:1px solid rgba(255,255,255,.06);backdrop-filter:blur(6px);
+  }
+  .brand{display:flex;align-items:center;gap:10px;font-weight:600;letter-spacing:.2px;white-space:nowrap}
+  .brand .dot{width:12px;height:12px;border-radius:50%;
+    background:radial-gradient(circle at 35% 30%,#ffe2bd,#f0a35e 60%,#cf7a3a);
+    box-shadow:0 0 18px 3px var(--ember-glow)}
+  .brand small{color:var(--faint);font-weight:400;letter-spacing:.5px;text-transform:uppercase;font-size:10px}
+  .chrome .spacer{flex:1}
+  .pills{display:flex;gap:6px;flex-wrap:wrap}
+  .pill{
+    border:1px solid var(--line);background:transparent;color:var(--muted);
+    padding:7px 14px;border-radius:999px;font-size:13px;cursor:pointer;transition:.2s;font-family:inherit;
+  }
+  .pill:hover{color:var(--ink);border-color:rgba(255,255,255,.22)}
+  .pill.active{color:#1a130c;background:linear-gradient(180deg,#ffce9a,var(--ember));border-color:transparent;font-weight:600}
+  .souls{display:flex;align-items:center;gap:8px}
+  .souls .lbl{color:var(--faint);font-size:11px;text-transform:uppercase;letter-spacing:1px}
+  .seg{display:flex;background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:999px;padding:3px}
+  .seg button{border:0;background:transparent;color:var(--muted);padding:6px 11px;border-radius:999px;font-size:12px;cursor:pointer;font-family:inherit;transition:.15s}
+  .seg button:hover{color:var(--ink)}
+  .seg button.on{background:rgba(240,163,94,.16);color:var(--ember)}
+  .tour-btn{border:1px solid var(--line);background:rgba(240,163,94,.08);color:var(--ember);
+    padding:7px 14px;border-radius:999px;font-size:13px;cursor:pointer;font-family:inherit;transition:.2s}
+  .tour-btn:hover{background:rgba(240,163,94,.16)}
+
+  /* ---------- the simulated screen ---------- */
+  .stage{flex:1;display:flex;align-items:center;justify-content:center;padding:22px;min-height:0}
+  .screen{
+    position:relative;width:min(1180px,96vw);height:min(74vh,760px);
+    border-radius:26px;overflow:hidden;isolation:isolate;
+    background:
+      radial-gradient(700px 460px at 78% 8%, rgba(240,163,94,.10), transparent 60%),
+      linear-gradient(165deg,var(--screen1),var(--screen0));
+    border:1px solid rgba(255,255,255,.08);
+    box-shadow:0 40px 120px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.05);
+  }
+  .screen::after{ /* soft vignette + grain feel */
+    content:"";position:absolute;inset:0;pointer-events:none;
+    background:radial-gradient(120% 120% at 50% 0%,transparent 60%,rgba(0,0,0,.35));
+    mix-blend-mode:multiply;
+  }
+  .statusbar{position:absolute;top:0;left:0;right:0;height:38px;display:flex;align-items:center;
+    justify-content:space-between;padding:0 18px;color:var(--faint);font-size:12px;z-index:5}
+  .statusbar .left{display:flex;align-items:center;gap:9px}
+  .statusbar .pres{width:9px;height:9px;border-radius:50%;
+    background:radial-gradient(circle at 35% 30%,#ffe2bd,#f0a35e);
+    box-shadow:0 0 14px 3px var(--ember-glow);animation:breathe 4.2s ease-in-out infinite}
+  @keyframes breathe{0%,100%{transform:scale(1);opacity:.85}50%{transform:scale(1.25);opacity:1}}
+
+  /* ---------- scenes ---------- */
+  .scene{position:absolute;inset:0;padding:54px 44px 30px;opacity:0;pointer-events:none;
+    transition:opacity .55s ease, transform .55s ease;transform:translateY(8px);overflow:auto}
+  .scene.active{opacity:1;pointer-events:auto;transform:none}
+  .scene::-webkit-scrollbar{width:8px}.scene::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1);border-radius:8px}
+
+  h1,h2,h3{font-weight:600;margin:0}
+  .say{font-family:var(--serif);font-size:15px;line-height:1.55}
+  .muted{color:var(--muted)} .faint{color:var(--faint)}
+
+  /* presence (big) */
+  .presence-wrap{display:flex;flex-direction:column;align-items:center;gap:6px}
+  .orb{position:relative;width:18px;height:18px;border-radius:50%;
+    background:radial-gradient(circle at 35% 30%,#ffe7c6,#f0a35e 55%,#c96f30);
+    box-shadow:0 0 30px 8px var(--ember-glow)}
+  .orb::before,.orb::after{content:"";position:absolute;inset:-10px;border-radius:50%;
+    border:1px solid rgba(240,163,94,.35);animation:ping 3.4s ease-out infinite}
+  .orb::after{animation-delay:1.7s}
+  @keyframes ping{0%{transform:scale(.6);opacity:.7}100%{transform:scale(2.4);opacity:0}}
+
+  /* ---------- installer ---------- */
+  .center-col{max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+  .step-eyebrow{color:var(--ember);font-size:11px;letter-spacing:2px;text-transform:uppercase}
+  .driver-box{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px}
+  .bar{height:7px;border-radius:7px;background:rgba(255,255,255,.08);overflow:hidden;margin-top:12px}
+  .bar > i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--ember2),var(--ember));border-radius:7px;transition:width .25s}
+  .driver-stream{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:var(--muted);
+    height:96px;overflow:hidden;margin-top:12px;line-height:1.7}
+  .driver-stream b{color:var(--ok);font-weight:600}
+  .cards3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  .mcard{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px;cursor:pointer;transition:.2s;display:flex;flex-direction:column;gap:8px;min-height:148px}
+  .mcard:hover{border-color:rgba(240,163,94,.5);transform:translateY(-3px);background:var(--card2)}
+  .mcard.sel{border-color:var(--ember);box-shadow:0 0 0 1px var(--ember),0 12px 30px rgba(0,0,0,.4)}
+  .mcard .ic{font-size:22px}
+  .mcard h3{font-size:15px}
+  .mcard p{margin:0;font-size:12.5px;color:var(--muted);line-height:1.5}
+  .mcard .tag{margin-top:auto;font-size:11px;color:var(--faint)}
+  .equal-note{text-align:center;color:var(--faint);font-size:12px}
+  .wifi-list{display:flex;flex-direction:column;gap:8px}
+  .wifi{display:flex;align-items:center;justify-content:space-between;background:var(--card);border:1px solid var(--line);
+    border-radius:12px;padding:11px 14px;cursor:pointer;transition:.15s}
+  .wifi:hover{background:var(--card2)} .wifi .s{display:flex;align-items:center;gap:10px}
+  .wifi .st{font-size:12px;color:var(--faint)} .wifi.connected{border-color:rgba(132,211,166,.5)} .wifi.connected .st{color:var(--ok)}
+  .btn{align-self:flex-start;border:0;border-radius:999px;padding:11px 22px;font-size:14px;cursor:pointer;font-family:inherit;
+    background:linear-gradient(180deg,#ffce9a,var(--ember));color:#241809;font-weight:600;transition:.2s}
+  .btn:hover{filter:brightness(1.06);transform:translateY(-1px)}
+  .btn[disabled]{opacity:.4;cursor:not-allowed;transform:none;filter:none}
+  .btn.ghost{background:transparent;border:1px solid var(--line);color:var(--muted);font-weight:500}
+  .btn.ghost:hover{color:var(--ink);border-color:rgba(255,255,255,.25)}
+
+  /* ---------- first meeting ---------- */
+  .meeting{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;text-align:center}
+  .meeting .lines{max-width:560px}
+  .choices{display:flex;gap:12px;flex-wrap:wrap;justify-content:center}
+  .choice{border:1px solid var(--line);background:var(--card);border-radius:14px;padding:14px 22px;cursor:pointer;transition:.2s;min-width:120px}
+  .choice:hover{border-color:var(--ember);transform:translateY(-2px);background:var(--card2)}
+  .choice .big{font-size:20px;margin-bottom:4px}
+
+  /* ---------- the hearth (home) ---------- */
+  .home{height:100%;display:flex;flex-direction:column}
+  .home .top{display:flex;align-items:flex-start;justify-content:space-between}
+  .clock{font-size:15px;color:var(--muted)} .clock b{color:var(--ink);font-weight:600}
+  .tools{display:flex;gap:8px}
+  .tbtn{border:1px solid var(--line);background:var(--card);color:var(--muted);border-radius:999px;
+    padding:7px 13px;font-size:12.5px;cursor:pointer;transition:.15s;font-family:inherit}
+  .tbtn:hover{color:var(--ink);border-color:rgba(255,255,255,.25)}
+  .briefing{margin-top:26px;max-width:640px}
+  .briefing .head{color:var(--faint);font-size:12px;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px}
+  .brief-card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px}
+  .brief-card .row{display:flex;gap:10px;align-items:flex-start;padding:7px 0;font-size:14px;color:var(--muted)}
+  .brief-card .row .b{color:var(--faint)}
+  .brief-card .row b{color:var(--ink);font-weight:500}
+  .home .grow{flex:1}
+  .intent{margin-top:18px}
+  .chips{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:12px}
+  .chip{border:1px solid var(--line);background:rgba(255,255,255,.03);color:var(--muted);border-radius:999px;
+    padding:8px 14px;font-size:13px;cursor:pointer;transition:.15s;font-family:inherit}
+  .chip:hover{color:var(--ink);border-color:var(--ember);background:rgba(240,163,94,.08)}
+  .intent-bar{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--line);
+    border-radius:16px;padding:6px 6px 6px 18px}
+  .intent-bar input{flex:1;background:transparent;border:0;outline:0;color:var(--ink);font-size:15px;font-family:inherit;padding:12px 0}
+  .intent-bar input::placeholder{color:var(--faint)}
+  .icon-btn{width:42px;height:42px;border-radius:12px;border:1px solid var(--line);background:rgba(255,255,255,.03);
+    color:var(--muted);cursor:pointer;font-size:16px;transition:.15s;display:grid;place-items:center}
+  .icon-btn:hover{color:var(--ember);border-color:var(--ember)}
+  .icon-btn.send{background:linear-gradient(180deg,#ffce9a,var(--ember));color:#241809;border:0}
+
+  .thinking{display:flex;align-items:center;gap:12px;color:var(--muted);font-family:var(--serif);font-size:15px;margin-top:22px;opacity:0;transition:.3s}
+  .thinking.show{opacity:1}
+  .think-dots i{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--ember);margin:0 2px;animation:td 1.1s infinite}
+  .think-dots i:nth-child(2){animation-delay:.18s}.think-dots i:nth-child(3){animation-delay:.36s}
+  @keyframes td{0%,100%{opacity:.25;transform:translateY(0)}50%{opacity:1;transform:translateY(-3px)}}
+
+  /* ---------- materialized surface ---------- */
+  #surfaceHost{margin-top:18px}
+  .surface{background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.02));
+    border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;
+    opacity:0;transform:translateY(16px) scale(.985);filter:blur(10px);
+    transition:opacity .6s cubic-bezier(.2,.7,.2,1),transform .6s cubic-bezier(.2,.7,.2,1),filter .6s}
+  .surface.in{opacity:1;transform:none;filter:none}
+  .surface .s-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:14px}
+  .surface .s-head .t{font-size:16px;font-weight:600}
+  .surface .s-head .c{color:var(--faint);font-size:13px}
+  .made-tag{font-family:var(--serif);font-style:italic;color:var(--ember);font-size:13px;margin-bottom:6px;display:block}
+
+  .grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+  .photo{aspect-ratio:1;border-radius:12px;position:relative;cursor:grab;overflow:hidden;border:1px solid rgba(255,255,255,.08);
+    transition:transform .15s, box-shadow .15s, opacity .3s}
+  .photo:hover{transform:translateY(-2px);box-shadow:0 8px 22px rgba(0,0,0,.4)}
+  .photo:active{cursor:grabbing}
+  .photo .x{position:absolute;top:5px;right:5px;width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,.55);
+    color:#fff;border:0;cursor:pointer;font-size:13px;line-height:1;opacity:0;transition:.15s}
+  .photo:hover .x{opacity:1}
+  .photo.more{display:grid;place-items:center;background:rgba(255,255,255,.05)!important;color:var(--muted);font-size:14px;cursor:default}
+  .photo.removing{opacity:0;transform:scale(.7)}
+  .trash{margin-top:12px;border:1px dashed rgba(255,255,255,.18);border-radius:12px;padding:12px;text-align:center;
+    color:var(--faint);font-size:13px;display:none}
+  .trash.show{display:block}
+  .trash.over{border-color:var(--ember);color:var(--ember);background:rgba(240,163,94,.07)}
+
+  .share-row{display:flex;align-items:center;gap:8px;margin-top:16px;flex-wrap:wrap}
+  .share-row .lab{color:var(--muted);font-size:13px;margin-right:4px}
+  .person{border:1px solid var(--line);background:rgba(255,255,255,.04);border-radius:999px;padding:6px 13px;font-size:13px;color:var(--ink);cursor:pointer;transition:.15s}
+  .person.on{border-color:var(--ember);background:rgba(240,163,94,.12);color:var(--ember)}
+
+  .s-foot{display:flex;align-items:center;gap:18px;margin-top:18px;padding-top:14px;border-top:1px solid rgba(255,255,255,.08);flex-wrap:wrap}
+  .linkbtn{background:none;border:0;color:var(--muted);cursor:pointer;font-size:13px;font-family:inherit;transition:.15s;padding:4px 0}
+  .linkbtn:hover{color:var(--ember)}
+  .s-foot .push{flex:1}
+
+  .codeface{display:none;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;line-height:1.9;color:var(--muted)}
+  .surface.show-code .album-face{display:none}
+  .surface.show-code .codeface{display:block}
+  .codeface .cl{padding:3px 8px;border-radius:7px;cursor:pointer;transition:.12s;display:block}
+  .codeface .cl:hover{background:rgba(240,163,94,.1);color:var(--ink)}
+  .codeface .cm{color:var(--faint)}
+  .codeface .why{color:var(--ember);font-style:italic;font-family:var(--serif);font-size:12.5px;margin:2px 0 8px 14px;display:none}
+  .codeface .cl.open + .why{display:block}
+
+  .plan{margin-top:14px;background:rgba(0,0,0,.25);border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:none}
+  .plan.show{display:block}
+  .plan ol{margin:0 0 10px;padding-left:20px;color:var(--muted);font-size:13.5px;line-height:1.8}
+  .snap{display:flex;align-items:center;gap:8px;color:var(--ok);font-size:13px}
+
+  .success{display:none;flex-direction:column;align-items:flex-start;gap:8px;padding:6px 2px}
+  .surface.done .album-face,.surface.done .codeface,.surface.done .s-foot,.surface.done .share-row,.surface.done .primary-wrap{display:none}
+  .surface.done .success{display:flex}
+  .success .big{font-size:16px;color:var(--ink)}
+  .primary-wrap{margin-top:16px}
+
+  /* ---------- the Brain ---------- */
+  .brain-pages{display:flex;flex-direction:column;gap:10px}
+  .bpage{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;transition:.3s}
+  .bp-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:5px}
+  .bp-t{font-size:12px;color:var(--ember);font-weight:600;letter-spacing:.4px;text-transform:uppercase}
+  .bp-acts{font-size:12px;color:var(--faint)}
+  .bp-body{font-size:13.5px;color:var(--muted);line-height:1.6}
+  .bp-body.editing{outline:1px solid var(--ember);border-radius:6px;padding:6px;color:var(--ink);background:rgba(0,0,0,.25)}
+  .bp-lessons{margin-top:14px;background:rgba(240,163,94,.06);border:1px solid rgba(240,163,94,.18);border-radius:12px;padding:12px 14px}
+  .bp-lessons-h{font-size:12px;color:var(--ember);margin-bottom:8px}
+  .bp-lesson{font-size:13px;color:var(--ink);line-height:1.85}
+  .bp-note{margin-top:12px;font-size:12px;color:var(--faint);text-align:center}
+
+  /* ---------- voice overlay ---------- */
+  .voice{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;text-align:center}
+  .bigorb{width:30px;height:30px}
+  .vt{max-width:560px}
+  .vt .u{color:var(--muted);font-size:14px;margin-bottom:14px}
+  .vt .a{font-family:var(--serif);font-size:19px;line-height:1.5}
+  .vsurface{margin-top:8px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 18px;max-width:420px;width:100%}
+  .vsurface .lab{font-size:12px;color:var(--faint);margin-bottom:8px}
+  .vchips{display:flex;gap:10px;justify-content:center;margin-top:8px}
+  .vchip{border:1px solid var(--line);background:var(--card);border-radius:999px;padding:9px 18px;font-size:14px;color:var(--ink);cursor:pointer;font-family:var(--serif)}
+  .vchip:hover{border-color:var(--ember);color:var(--ember)}
+
+  /* ---------- alt soul scenes ---------- */
+  .soul-tag{position:absolute;top:46px;left:44px;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--faint)}
+  .vf{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px}
+  .transcript{width:min(520px,90%);background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px;min-height:170px;font-family:var(--serif);font-size:15px;line-height:1.9}
+  .transcript .me{color:var(--muted)} .transcript .ai{color:var(--ink)}
+
+  .canvas-area{position:absolute;inset:38px 0 0;overflow:hidden;cursor:grab}
+  .canvas-area svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+  .node{position:absolute;background:var(--card2);border:1px solid var(--line);border-radius:14px;padding:12px 14px;
+    min-width:130px;cursor:grab;user-select:none;font-size:13px;box-shadow:0 10px 26px rgba(0,0,0,.35)}
+  .node:active{cursor:grabbing}
+  .node .nh{font-size:11px;color:var(--faint);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}
+  .node.ai{background:radial-gradient(circle at 40% 30%,rgba(240,163,94,.25),rgba(240,163,94,.05));border-color:rgba(240,163,94,.5);text-align:center;color:var(--ember);font-weight:600}
+  .canvas-hint{position:absolute;bottom:16px;left:0;right:0;text-align:center;color:var(--faint);font-size:12px}
+
+  .desk{height:100%;display:flex;flex-direction:column}
+  .menubar{display:flex;align-items:center;gap:16px;color:var(--muted);font-size:13px;border-bottom:1px solid rgba(255,255,255,.07);padding-bottom:10px}
+  .menubar .app-name{color:var(--ink);font-weight:600}
+  .desk-body{flex:1;display:flex;gap:16px;margin-top:16px;min-height:0}
+  .window{flex:1;background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;display:flex;flex-direction:column}
+  .window .tb{background:rgba(255,255,255,.04);padding:9px 13px;font-size:12.5px;color:var(--muted);display:flex;gap:7px;align-items:center}
+  .window .tb .dotr{width:9px;height:9px;border-radius:50%;background:rgba(255,255,255,.15)}
+  .window .wb{padding:14px;overflow:auto}
+  .dgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
+  .dgrid .photo{cursor:default}.dgrid .photo:hover{transform:none}
+  .agent-dock{width:230px;background:linear-gradient(180deg,rgba(240,163,94,.10),rgba(240,163,94,.02));
+    border:1px solid rgba(240,163,94,.25);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:12px}
+  .agent-dock .ah{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ember);text-transform:uppercase;letter-spacing:1px}
+  .agent-dock .msg{font-family:var(--serif);font-size:14.5px;line-height:1.5}
+  .agent-dock .acts{display:flex;gap:8px;margin-top:auto}
+
+  /* ---------- guided tour bar ---------- */
+  .tourbar{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);z-index:20;
+    display:none;align-items:center;gap:16px;background:rgba(20,16,24,.92);border:1px solid rgba(240,163,94,.3);
+    border-radius:999px;padding:10px 12px 10px 20px;box-shadow:0 18px 50px rgba(0,0,0,.5);backdrop-filter:blur(8px);max-width:92%}
+  .tourbar.show{display:flex}
+  .tourbar .txt{font-size:13.5px;color:var(--ink);max-width:560px;line-height:1.4}
+  .tourbar .step{color:var(--faint);font-size:11px;white-space:nowrap}
+  .tourbar .nav{display:flex;gap:6px}
+  .mini{border:0;border-radius:999px;padding:8px 16px;font-size:13px;cursor:pointer;font-family:inherit;
+    background:linear-gradient(180deg,#ffce9a,var(--ember));color:#241809;font-weight:600}
+  .mini.g{background:transparent;color:var(--muted);border:1px solid var(--line)}
+
+  .fade-late{opacity:0;animation:fadein .8s ease forwards}
+  @keyframes fadein{to{opacity:1}}
+  .d1{animation-delay:.15s}.d2{animation-delay:.35s}.d3{animation-delay:.6s}.d4{animation-delay:.9s}
+
+  @media (max-width:720px){
+    .cards3{grid-template-columns:1fr}.grid{grid-template-columns:repeat(4,1fr)}
+    .scene{padding:50px 20px 24px}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- prototype chrome -->
+  <div class="chrome">
+    <div class="brand"><span class="dot"></span> Hearth&nbsp;OS <small>prototype</small></div>
+    <div class="pills" id="pills">
+      <button class="pill" data-scene="scene-installer">1 · Install</button>
+      <button class="pill" data-scene="scene-meeting">2 · First meeting</button>
+      <button class="pill active" data-scene="scene-home">3 · The Hearth</button>
+    </div>
+    <div class="spacer"></div>
+    <div class="souls">
+      <span class="lbl">Soul</span>
+      <div class="seg" id="souls">
+        <button class="on" data-soul="hearth">Hearth</button>
+        <button data-soul="voice">Voice-first</button>
+        <button data-soul="canvas">Canvas</button>
+        <button data-soul="desktop">Desktop</button>
+      </div>
+    </div>
+    <button class="tour-btn" id="tourStart">▶ Guided tour</button>
+  </div>
+
+  <!-- the simulated screen -->
+  <div class="stage">
+    <div class="screen" id="screen">
+      <div class="statusbar">
+        <div class="left"><span class="pres"></span><span>Hearth</span></div>
+        <div class="right" id="clock">Tue · 9:14</div>
+      </div>
+
+      <!-- SCENE: installer -->
+      <section class="scene" id="scene-installer">
+        <div class="center-col">
+          <div id="inst-step1">
+            <div class="step-eyebrow">Installing · maximum compatibility</div>
+            <h1 style="font-size:24px;margin:8px 0 4px">Bringing in every network driver</h1>
+            <p class="muted" style="margin:0">So your wifi or ethernet just works — on any laptop, out of the box.</p>
+            <div class="driver-box" style="margin-top:16px">
+              <div style="display:flex;justify-content:space-between;font-size:13px">
+                <span class="muted">Bundling wifi / LAN drivers</span>
+                <span id="drvCount" class="muted">0 loaded</span>
+              </div>
+              <div class="bar"><i id="drvBar"></i></div>
+              <div class="driver-stream" id="drvStream"></div>
+            </div>
+          </div>
+
+          <div id="inst-step2" style="display:none">
+            <div class="step-eyebrow">Choose your intelligence</div>
+            <h1 style="font-size:24px;margin:8px 0 2px">Which AI should run your machine?</h1>
+            <p class="equal-note" style="margin:4px 0 14px">Three equal paths. No default, no lock-in — switch whenever you like.</p>
+            <div class="cards3" id="modelCards">
+              <div class="mcard" data-model="local">
+                <div class="ic">🖥️</div><h3>Local AI</h3>
+                <p>Runs entirely on this machine. Private, offline-capable, yours.</p>
+                <span class="tag" id="hwtag">Detected: 24&nbsp;GB GPU · pick a local model</span>
+              </div>
+              <div class="mcard" data-model="api">
+                <div class="ic">🔑</div><h3>API key</h3>
+                <p>Bring your own key. Pay per use. Any provider, swappable.</p>
+                <span class="tag">Anthropic · OpenAI · Google · local gateway…</span>
+              </div>
+              <div class="mcard" data-model="sub">
+                <div class="ic">✦</div><h3>Subscription</h3>
+                <p>Sign in to a plan you already pay for.</p>
+                <span class="tag">Claude Max · ChatGPT · Gemini…</span>
+              </div>
+            </div>
+            <button class="btn" id="modelContinue" disabled style="margin-top:18px">Connect to a network →</button>
+          </div>
+
+          <div id="inst-step3" style="display:none">
+            <div class="step-eyebrow">Almost there</div>
+            <h1 style="font-size:24px;margin:8px 0 12px">Get online</h1>
+            <div class="wifi-list" id="wifiList">
+              <div class="wifi" data-ssid="Home-Fiber-5G"><div class="s">📶 <span>Home-Fiber-5G</span></div><span class="st">tap to connect</span></div>
+              <div class="wifi" data-ssid="Studio"><div class="s">📶 <span>Studio</span></div><span class="st">tap to connect</span></div>
+              <div class="wifi" data-ssid="eduroam"><div class="s">📶 <span>eduroam</span></div><span class="st">tap to connect</span></div>
+            </div>
+            <button class="btn" id="toMeeting" disabled style="margin-top:18px">Begin →</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCENE: first meeting -->
+      <section class="scene" id="scene-meeting">
+        <div class="meeting">
+          <div class="presence-wrap fade-late d1"><div class="orb"></div></div>
+          <div class="lines fade-late d2">
+            <p class="say" style="font-size:20px;line-height:1.6">Hello. I'm the system you just installed.</p>
+            <p class="say muted" style="margin-top:8px">There's no desktop to learn here — we'll figure out how you work, together.</p>
+          </div>
+          <div class="fade-late d3"><p class="muted" style="margin-bottom:14px">How should we talk?</p>
+            <div class="choices">
+              <div class="choice" data-talk="type"><div class="big">⌨️</div>type</div>
+              <div class="choice" data-talk="speak"><div class="big">🎙️</div>speak</div>
+              <div class="choice" data-talk="both"><div class="big">⌨️🎙️</div>both</div>
+            </div>
+          </div>
+          <p class="faint fade-late d4" style="font-size:12.5px;max-width:420px">You can change this anytime — and you can always open the hood and read every line of my code.</p>
+        </div>
+      </section>
+
+      <!-- SCENE: the hearth (home) -->
+      <section class="scene" id="scene-home">
+        <div class="home">
+          <div class="top">
+            <div class="clock"><b id="homeDay">Tuesday</b> · <span id="homeTime">9:14</span></div>
+            <div class="tools">
+              <button class="tbtn" id="micBtn">🎙 speak</button>
+              <button class="tbtn" id="eveBtn">🌙 simulate evening</button>
+              <button class="tbtn" id="brainBtn">🧠 the Brain</button>
+              <button class="tbtn" id="resetHome">↺ reset</button>
+            </div>
+          </div>
+
+          <div class="briefing" id="briefing">
+            <div class="head">this morning</div>
+            <div class="brief-card" id="briefCard">
+              <div class="row"><span class="b">·</span><div>battery healthy · <b>2 updates</b> staged (safe to apply)</div></div>
+              <div class="row"><span class="b">·</span><div><b>3 emails</b> look like they want you</div></div>
+              <div class="row"><span class="b">·</span><div>last night's export is <b>finished</b></div></div>
+            </div>
+          </div>
+
+          <div class="grow"></div>
+
+          <div class="thinking" id="thinking"><div class="orb" style="width:14px;height:14px"></div><span id="thinkText">weaving an interface for that</span> <span class="think-dots"><i></i><i></i><i></i></span></div>
+
+          <div id="surfaceHost"></div>
+
+          <div class="intent" id="intentArea">
+            <div class="chips">
+              <button class="chip" data-intent="japan">📸 make a shared album of my Japan trip</button>
+              <button class="chip" data-intent="disk">🧹 clean up my disk if it's getting full</button>
+              <button class="chip" data-intent="mail">✉️ draft replies to the urgent emails</button>
+              <button class="chip" data-intent="brain">🧠 what do you know about me?</button>
+            </div>
+            <div class="intent-bar">
+              <input id="intentInput" placeholder="say or type anything…" />
+              <button class="icon-btn" id="intentMic">🎙</button>
+              <button class="icon-btn send" id="intentSend">→</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCENE: voice -->
+      <section class="scene" id="scene-voice">
+        <div class="voice">
+          <div class="presence-wrap"><div class="orb bigorb"></div></div>
+          <div class="muted" id="voiceState">listening…</div>
+          <div class="vt">
+            <div class="u">you said: “how's my disk doing, and clean it if it's getting full”</div>
+            <div class="a" id="voiceSay">“You're at 78%. The biggest thing is 40&nbsp;GB of old build caches — completely safe to clear. Want me to?”</div>
+          </div>
+          <div class="vsurface fade-late d2">
+            <div class="lab">shown only because it helps</div>
+            <div style="display:flex;align-items:center;gap:12px">
+              <div class="bar" style="flex:1;margin:0"><i style="width:78%"></i></div><span class="muted" style="font-size:13px">78%</span>
+            </div>
+            <div class="muted" style="font-size:13px;margin-top:8px">▸ old build caches — <b style="color:var(--ink)">40&nbsp;GB</b></div>
+          </div>
+          <div class="vchips">
+            <button class="vchip" id="vYes">“yes, clear it”</button>
+            <button class="vchip" id="vNo">“not now”</button>
+            <button class="vchip" onclick="go('scene-home')">close</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCENE: voice-first soul -->
+      <section class="scene" id="scene-voicefirst">
+        <div class="soul-tag">Soul · Voice-first advisor</div>
+        <div class="vf">
+          <div class="presence-wrap"><div class="orb bigorb"></div></div>
+          <div class="muted">speaking with you</div>
+          <div class="transcript" id="vfTranscript"></div>
+          <div class="faint" style="font-size:12.5px">the screen is just a transcript — surfaces appear only when you ask</div>
+        </div>
+      </section>
+
+      <!-- SCENE: canvas soul -->
+      <section class="scene" id="scene-canvas" style="padding:0">
+        <div class="soul-tag" style="z-index:3">Soul · Infinite canvas</div>
+        <div class="canvas-area" id="canvasArea">
+          <svg id="canvasSvg"></svg>
+          <!-- nodes injected by JS -->
+          <div class="canvas-hint">drag anything · everything persists in place · ask anywhere</div>
+        </div>
+      </section>
+
+      <!-- SCENE: desktop soul -->
+      <section class="scene" id="scene-desktop">
+        <div class="soul-tag">Soul · Augmented desktop</div>
+        <div class="desk">
+          <div class="menubar"><span class="app-name">Files</span><span>Edit</span><span>View</span><span style="flex:1"></span><span>◌ agent</span></div>
+          <div class="desk-body">
+            <div class="window">
+              <div class="tb"><span class="dotr"></span><span class="dotr"></span><span class="dotr"></span>&nbsp; ~/Pictures</div>
+              <div class="wb"><div class="dgrid" id="deskGrid"></div></div>
+            </div>
+            <div class="agent-dock">
+              <div class="ah">◌ agent</div>
+              <div class="msg">“I noticed 312 photos from 6 different trips. Want me to sort them into albums?”</div>
+              <div class="acts"><button class="mini" onclick="alert('(prototype) the agent would sort them — with undo)')">yes</button><button class="mini g" onclick="this.closest('.agent-dock').querySelector('.msg').textContent='Okay — I\'ll stay out of the way.'">not now</button></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- guided tour bar -->
+      <div class="tourbar" id="tourbar">
+        <span class="step" id="tourStep">1 / 9</span>
+        <span class="txt" id="tourTxt"></span>
+        <div class="nav">
+          <button class="mini g" id="tourSkip">end</button>
+          <button class="mini" id="tourNext">Next ▶</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+const $=(s,r=document)=>r.querySelector(s);
+const $$=(s,r=document)=>[...r.querySelectorAll(s)];
+
+/* ---------------- scene management ---------------- */
+const HEARTH_SCENES=['scene-installer','scene-meeting','scene-home','scene-voice'];
+function go(id){
+  $$('.scene').forEach(s=>s.classList.toggle('active', s.id===id));
+  $$('#pills .pill').forEach(p=>p.classList.toggle('active', p.dataset.scene===id));
+  onEnter(id);
+}
+$$('#pills .pill').forEach(p=>p.addEventListener('click',()=>{ setSoul('hearth',false); go(p.dataset.scene); }));
+
+function onEnter(id){
+  if(id==='scene-installer') runInstaller();
+  if(id==='scene-voicefirst') runTranscript();
+  if(id==='scene-canvas') buildCanvas();
+  if(id==='scene-desktop') buildDeskGrid();
+}
+
+/* ---------------- souls ---------------- */
+function setSoul(soul, navigate=true){
+  $$('#souls button').forEach(b=>b.classList.toggle('on', b.dataset.soul===soul));
+  const pillsVisible = soul==='hearth';
+  $('#pills').style.opacity = pillsVisible?1:.35;
+  $('#pills').style.pointerEvents = pillsVisible?'auto':'none';
+  if(!navigate) return;
+  if(soul==='hearth') go('scene-home');
+  if(soul==='voice') go('scene-voicefirst');
+  if(soul==='canvas') go('scene-canvas');
+  if(soul==='desktop') go('scene-desktop');
+}
+$$('#souls button').forEach(b=>b.addEventListener('click',()=>setSoul(b.dataset.soul)));
+
+/* ---------------- installer ---------------- */
+const DRIVERS=['iwlwifi','ath9k','ath10k','ath11k','rtw88','rtw89','rtl8821ce','brcmfmac','broadcom-wl',
+'mt7921e','mt7601u','rtl8723be','r8169','r8168','e1000e','igb','igc','alx','tg3','b43','ipw2200',
+'cdc_ether','rndis_host','usbnet','mac80211','cfg80211','rtl8188eu','8821au','rtl88x2bu','aqc111'];
+let instStarted=false;
+function runInstaller(){
+  if(instStarted) return; instStarted=true;
+  const stream=$('#drvStream'), bar=$('#drvBar'), count=$('#drvCount');
+  let i=0, total=214, shown=[];
+  const tick=setInterval(()=>{
+    const name=DRIVERS[i%DRIVERS.length];
+    shown.unshift(`<b>✓</b> ${name} <span style="color:var(--faint)">loaded</span>`);
+    shown=shown.slice(0,5); stream.innerHTML=shown.join('<br>');
+    i++; const n=Math.min(total, Math.round(i/DRIVERS.length*total)+i);
+    count.textContent=Math.min(total,9+i*9)+' loaded';
+    bar.style.width=Math.min(100,(i/ (DRIVERS.length))*100)+'%';
+    if(i>=DRIVERS.length){ clearInterval(tick); count.textContent='214 loaded'; bar.style.width='100%';
+      setTimeout(()=>{ $('#inst-step1').style.display='none'; $('#inst-step2').style.display='block'; },650);
+    }
+  },130);
+}
+$$('#modelCards .mcard').forEach(c=>c.addEventListener('click',()=>{
+  $$('#modelCards .mcard').forEach(x=>x.classList.remove('sel'));
+  c.classList.add('sel'); $('#modelContinue').disabled=false;
+}));
+$('#modelContinue').addEventListener('click',()=>{ $('#inst-step2').style.display='none'; $('#inst-step3').style.display='block'; });
+$$('#wifiList .wifi').forEach(w=>w.addEventListener('click',()=>{
+  $$('#wifiList .wifi').forEach(x=>{x.classList.remove('connected');x.querySelector('.st').textContent='tap to connect';});
+  w.querySelector('.st').textContent='connecting…';
+  setTimeout(()=>{ w.classList.add('connected'); w.querySelector('.st').textContent='● online'; $('#toMeeting').disabled=false; },900);
+}));
+$('#toMeeting').addEventListener('click',()=>go('scene-meeting'));
+
+/* ---------------- first meeting ---------------- */
+$$('.choice').forEach(c=>c.addEventListener('click',()=>go('scene-home')));
+
+/* ---------------- home: intent -> manifestation ---------------- */
+const host=$('#surfaceHost'), thinking=$('#thinking');
+function clearSurface(){ host.innerHTML=''; }
+function think(text,cb){
+  $('#thinkText').textContent=text; thinking.classList.add('show');
+  setTimeout(()=>{ thinking.classList.remove('show'); cb(); }, 950);
+}
+function submitIntent(raw){
+  const t=(raw||'').toLowerCase();
+  let kind='japan';
+  if(t.includes('brain')||t.includes('know about me')||t.includes('remember')||t.includes('learned')) kind='brain';
+  else if(t.includes('disk')||t.includes('clean')||t.includes('space')) kind='disk';
+  else if(t.includes('mail')||t.includes('email')||t.includes('repl')) kind='mail';
+  else if(t.includes('japan')||t.includes('album')||t.includes('photo')||t.includes('trip')) kind='japan';
+  clearSurface();
+  const labels={japan:'weaving an album for you',disk:'looking at your disk',mail:'reading what came in',brain:'opening what I know about you'};
+  think(labels[kind]||'weaving an interface for that',()=>renderSurface(kind));
+  $('#intentInput').value='';
+}
+$('#intentSend').addEventListener('click',()=>submitIntent($('#intentInput').value||'japan'));
+$('#intentInput').addEventListener('keydown',e=>{ if(e.key==='Enter') submitIntent(e.target.value||'japan'); });
+$$('.chip').forEach(c=>c.addEventListener('click',()=>submitIntent(c.dataset.intent)));
+$('#micBtn').addEventListener('click',()=>go('scene-voice'));
+$('#intentMic').addEventListener('click',()=>go('scene-voice'));
+$('#brainBtn').addEventListener('click',()=>submitIntent('brain'));
+$('#resetHome').addEventListener('click',()=>{ clearSurface(); morning(); });
+
+const PHOTO_GRADS=[
+  'linear-gradient(135deg,#f6a96b,#d2603a)','linear-gradient(135deg,#6f86c6,#2f3a63)',
+  'linear-gradient(135deg,#7bc4a0,#2f6b56)','linear-gradient(135deg,#e8c069,#a8762a)',
+  'linear-gradient(135deg,#c98fb3,#6b3c5e)','linear-gradient(135deg,#86b8e6,#33567f)',
+  'linear-gradient(135deg,#f08a8a,#9c3b3b)','linear-gradient(135deg,#9fd0c7,#3f7a72)'];
+
+function renderSurface(kind){
+  if(kind==='disk') return renderDisk();
+  if(kind==='mail') return renderMail();
+  if(kind==='brain') return renderBrain();
+  return renderJapan();
+}
+
+function renderJapan(){
+  let total=312;
+  const tiles=[0,1,2,3,4,5,6,7].map((g,i)=>
+    `<div class="photo" draggable="true" data-id="${i}" style="background:${PHOTO_GRADS[i%PHOTO_GRADS.length]}"><button class="x" title="remove">✕</button></div>`
+  ).join('');
+  host.innerHTML=`
+  <div class="surface" id="surf">
+    <span class="made-tag">I built this for what you asked — it'll dissolve when you're done.</span>
+    <div class="s-head"><div class="t">Japan · Apr 2026</div><div class="c"><span id="pcount">312</span> photos found</div></div>
+    <div class="album-face">
+      <div class="grid" id="grid">${tiles}<div class="photo more">+304</div></div>
+      <div class="trash" id="trash">drag a photo here to drop it from the album 🗑</div>
+      <div class="share-row">
+        <span class="lab">share with</span>
+        <span class="person on" data-p="Mom">Mom</span>
+        <span class="person on" data-p="Dad">Dad</span>
+        <span class="person" data-p="add">+ add</span>
+      </div>
+    </div>
+    <div class="codeface" id="codeface">
+      <span class="cm"># exactly what I'll run — click any line to ask "why this?"</span>
+      <span class="cl">rsync -a --files-from=japan.list ~/Pictures ~/Albums/Japan-2026/</span>
+      <span class="why">copies the 312 photos into a new album folder. Nothing is moved or deleted.</span>
+      <span class="cl">hearth.share.create(path="~/Albums/Japan-2026", scope=["Mom","Dad"])</span>
+      <span class="why">a private link only Mom and Dad can open. Revocable anytime.</span>
+      <span class="cl">btrfs subvolume snapshot / .snapshots/pre-album</span>
+      <span class="why">a restore point first — so this whole thing is one tap to undo.</span>
+    </div>
+    <div class="plan" id="plan">
+      <ol>
+        <li>copy 312 files → ~/Albums/Japan-2026 &nbsp;<span class="faint">(no deletes)</span></li>
+        <li>create a private link — only Mom &amp; Dad</li>
+        <li>nothing leaves this machine except those photos</li>
+      </ol>
+      <div class="snap">● snapshot taken — one tap undoes all of it</div>
+    </div>
+    <div class="s-foot">
+      <button class="linkbtn" id="undoBtn">◀ undo</button>
+      <button class="linkbtn" id="planBtn">what will this do?</button>
+      <button class="linkbtn" id="codeBtn">as code ▶</button>
+      <span class="push"></span>
+    </div>
+    <div class="primary-wrap"><button class="btn" id="doIt">Create shared album</button></div>
+    <div class="success">
+      <div class="big">✓ Album created &amp; shared with Mom &amp; Dad</div>
+      <div class="snap">● snapshot #84 — <span style="text-decoration:underline;cursor:pointer" id="undo2">undo everything</span></div>
+    </div>
+  </div>`;
+  const surf=$('#surf'); requestAnimationFrame(()=>requestAnimationFrame(()=>surf.classList.add('in')));
+
+  // remove via X + drag
+  let removed=[];
+  function setCount(n){ $('#pcount').textContent=n; }
+  function removeTile(tile){
+    if(!tile||tile.classList.contains('more')) return;
+    tile.classList.add('removing');
+    removed.push(tile);
+    total--; setCount(total);
+    setTimeout(()=>{ tile.style.display='none'; },300);
+  }
+  $$('#grid .photo .x').forEach(x=>x.addEventListener('click',e=>{e.stopPropagation();removeTile(e.target.closest('.photo'));}));
+
+  const trash=$('#trash'); let dragEl=null;
+  $$('#grid .photo[draggable]').forEach(p=>{
+    p.addEventListener('dragstart',e=>{ dragEl=p; trash.classList.add('show'); e.dataTransfer.effectAllowed='move'; });
+    p.addEventListener('dragend',()=>{ trash.classList.remove('show','over'); });
+  });
+  trash.addEventListener('dragover',e=>{ e.preventDefault(); trash.classList.add('over'); });
+  trash.addEventListener('dragleave',()=>trash.classList.remove('over'));
+  trash.addEventListener('drop',e=>{ e.preventDefault(); removeTile(dragEl); trash.classList.remove('over'); });
+
+  $('#undoBtn').addEventListener('click',()=>{
+    const t=removed.pop(); if(t){ t.style.display=''; t.classList.remove('removing'); total++; setCount(total); }
+  });
+  $$('#surf .person[data-p]').forEach(pe=>pe.addEventListener('click',()=>{
+    if(pe.dataset.p==='add'){ pe.textContent='Sister'; pe.classList.add('on'); pe.dataset.p='Sister'; }
+    else pe.classList.toggle('on');
+  }));
+  $$('#codeface .cl').forEach(cl=>cl.addEventListener('click',()=>cl.classList.toggle('open')));
+  $('#codeBtn').addEventListener('click',()=>{
+    surf.classList.toggle('show-code');
+    $('#codeBtn').textContent=surf.classList.contains('show-code')?'◀ as album':'as code ▶';
+  });
+  $('#planBtn').addEventListener('click',()=>$('#plan').classList.toggle('show'));
+  $('#doIt').addEventListener('click',()=>surf.classList.add('done'));
+  $('#undo2').addEventListener('click',()=>{ surf.classList.remove('done'); });
+}
+
+function renderDisk(){
+  host.innerHTML=`
+  <div class="surface" id="surf">
+    <span class="made-tag">A small panel — just enough for this.</span>
+    <div class="s-head"><div class="t">Disk</div><div class="c">512 GB · 78% used</div></div>
+    <div class="album-face">
+      <div class="bar" style="margin:4px 0 14px"><i style="width:78%"></i></div>
+      <div class="muted" style="font-size:14px;line-height:1.9">
+        ▸ old build caches — <b style="color:var(--ink)">40 GB</b> &nbsp;<span class="faint">safe</span><br>
+        ▸ trash, 90+ days — <b style="color:var(--ink)">6 GB</b> &nbsp;<span class="faint">safe</span><br>
+        ▸ duplicate downloads — <b style="color:var(--ink)">2.3 GB</b> &nbsp;<span class="faint">safe</span>
+      </div>
+      <div class="snap" style="margin-top:14px">● snapshot first — reversible</div>
+    </div>
+    <div class="s-foot"><button class="linkbtn" id="codeBtn2">as code ▶</button><span class="push"></span></div>
+    <div class="codeface" id="cf2">
+      <span class="cm"># reclaim ≈ 48.3 GB</span>
+      <span class="cl">paccache -rk1  &amp;&amp;  rm -rf ~/.cache/builds/*</span>
+      <span class="cl">trash-empty 90</span>
+    </div>
+    <div class="primary-wrap"><button class="btn" id="doIt2">Reclaim 48 GB</button></div>
+    <div class="success"><div class="big">✓ 48 GB freed · now 69% used</div><div class="snap">● snapshot #84 — <span style="text-decoration:underline;cursor:pointer" onclick="this.closest('.surface').classList.remove('done')">undo</span></div></div>
+  </div>`;
+  const surf=$('#surf'); requestAnimationFrame(()=>requestAnimationFrame(()=>surf.classList.add('in')));
+  $('#codeBtn2').addEventListener('click',()=>{surf.classList.toggle('show-code');$('#codeBtn2').textContent=surf.classList.contains('show-code')?'◀ back':'as code ▶';});
+  $('#doIt2').addEventListener('click',()=>surf.classList.add('done'));
+}
+
+function renderMail(){
+  host.innerHTML=`
+  <div class="surface" id="surf">
+    <span class="made-tag">Drafts only — I won't send without you.</span>
+    <div class="s-head"><div class="t">4 urgent · replies drafted</div><div class="c">tap a draft to edit</div></div>
+    <div class="album-face" style="display:flex;flex-direction:column;gap:10px">
+      ${[['Landlord — lease renewal','“Happy to renew. Can we keep the current rent? …”'],
+         ['Dr. Okafor — reschedule','“Tuesday 9:00 works for me. Confirming now. …”'],
+         ['Maya — project deadline','“Sending the draft tonight, final by Friday. …”'],
+         ['Bank — verify login','“(flagged as suspicious — I did NOT reply.)”']].map(m=>
+        `<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px">
+           <div style="font-size:13.5px;color:var(--ink);margin-bottom:4px">${m[0]}</div>
+           <div class="say muted" style="font-size:13px">${m[1]}</div></div>`).join('')}
+    </div>
+    <div class="primary-wrap"><button class="btn" id="doIt3">Send the 3 safe replies</button></div>
+    <div class="success"><div class="big">✓ 3 sent · 1 left for you</div><div class="snap">● drafts saved — <span style="text-decoration:underline;cursor:pointer" onclick="this.closest('.surface').classList.remove('done')">undo</span></div></div>
+  </div>`;
+  const surf=$('#surf'); requestAnimationFrame(()=>requestAnimationFrame(()=>surf.classList.add('in')));
+  $('#doIt3').addEventListener('click',()=>surf.classList.add('done'));
+}
+
+function renderBrain(){
+  const pages=[
+    {t:'You', body:'Prefers a warm, low-contrast look. Most focused in the mornings. Likes concise replies. Metric units. Fine with the steward acting on routine things — but asks first on anything that deletes.'},
+    {t:'Rhythms', body:'Opens the day ~9:00 with a briefing. Winds down ~18:30. Tuesdays are heavy on email.'},
+    {t:'People', body:'Mom & Dad — default recipients for family photo shares. Maya — work (the “project”). Sister — recently added to a share.'},
+    {t:'Projects', body:'“Hearth OS” — active. Cares about: privacy, owning the code, calm UX.'},
+    {t:'Workflows', body:'“tidy up” = group by type, never delete. Screenshots → ~/Shots. Albums → ~/Albums/&lt;trip&gt;.'},
+  ];
+  const lessons=[
+    'When you say “tidy up”, group by type and never delete — confirmed 3×.',
+    'After a kernel update, rebuild the rtl8821ce driver before reconnecting wifi.',
+    'Route Rust refactors to the API model — the local model missed this twice.',
+  ];
+  host.innerHTML=`
+  <div class="surface" id="surf">
+    <span class="made-tag">Everything I've learned about you — plain text you can read, change, or delete.</span>
+    <div class="s-head"><div class="t">The Brain · what I know about you</div><div class="c">compiled from your activity</div></div>
+    <div class="album-face">
+      <div class="brain-pages">
+        ${pages.map((p,i)=>`
+          <div class="bpage" data-i="${i}">
+            <div class="bp-head"><span class="bp-t">${p.t}</span>
+              <span class="bp-acts"><button class="linkbtn bp-edit">edit</button> · <button class="linkbtn bp-forget">forget</button></span>
+            </div>
+            <div class="bp-body">${p.body}</div>
+          </div>`).join('')}
+      </div>
+      <div class="bp-lessons">
+        <div class="bp-lessons-h">lessons I've figured out about running this machine for you <span class="faint">(“notes to self”)</span></div>
+        ${lessons.map(l=>`<div class="bp-lesson">▸ ${l}</div>`).join('')}
+      </div>
+    </div>
+    <div class="s-foot">
+      <span class="faint" style="font-size:12.5px">raw activity log (ground truth) ─► compiled into this wiki · I never rewrite the log</span>
+      <span class="push"></span>
+    </div>
+    <div class="bp-note">🔒 lives on this machine &nbsp;·&nbsp; 🔁 stays with you even if you switch AI models</div>
+  </div>`;
+  const surf=$('#surf'); requestAnimationFrame(()=>requestAnimationFrame(()=>surf.classList.add('in')));
+  $$('#surf .bpage').forEach(pg=>{
+    pg.querySelector('.bp-forget').addEventListener('click',()=>{
+      pg.style.opacity='0'; pg.style.transform='translateX(-14px)'; setTimeout(()=>pg.remove(),300);
+    });
+    pg.querySelector('.bp-edit').addEventListener('click',e=>{
+      const body=pg.querySelector('.bp-body'); const editing=body.isContentEditable;
+      body.contentEditable=!editing; e.target.textContent=editing?'edit':'done';
+      if(!editing){ body.classList.add('editing'); body.focus(); } else { body.classList.remove('editing'); }
+    });
+  });
+}
+
+/* ---------------- evening / steward ---------------- */
+function morning(){
+  $('#homeTime').textContent='9:14'; $('#clock').textContent='Tue · 9:14';
+  $('.briefing .head',document).textContent='this morning';
+  $('#briefCard').innerHTML=`
+    <div class="row"><span class="b">·</span><div>battery healthy · <b>2 updates</b> staged (safe to apply)</div></div>
+    <div class="row"><span class="b">·</span><div><b>3 emails</b> look like they want you</div></div>
+    <div class="row"><span class="b">·</span><div>last night's export is <b>finished</b></div></div>`;
+}
+function evening(){
+  clearSurface();
+  $('#homeTime').textContent='18:40'; $('#clock').textContent='Tue · 18:40';
+  $('.briefing .head',document).textContent='while you were away';
+  $('#briefCard').innerHTML=`
+    <div class="row"><span class="b" style="color:var(--ok)">✓</span><div>finished the Japan album → <b>sent to Mom &amp; Dad</b></div></div>
+    <div class="row"><span class="b" style="color:var(--ok)">✓</span><div>applied 2 safe updates <span class="faint">(snapshot #84)</span></div></div>
+    <div class="row"><span class="b" style="color:var(--warn)">⚠</span><div>one thing I left for you — a config that's your call &nbsp;<button class="linkbtn" style="color:var(--ember)" onclick="alert('(prototype) you and the agent would open it together')">look together →</button></div></div>
+    <div class="row"><span class="b" style="color:var(--ember)">🧠</span><div>consolidated today into the Brain — learned <b>3 new things</b> &nbsp;<button class="linkbtn" style="color:var(--ember)" onclick="submitIntent('brain')">review →</button></div></div>
+    <div style="border-top:1px solid rgba(255,255,255,.08);margin-top:8px;padding-top:12px" class="row">
+      <div style="width:100%">
+        <div class="muted" style="font-size:13px;margin-bottom:8px">today I acted on <b style="color:var(--ink)">3 routine things</b>, asked first on <b style="color:var(--ink)">1</b></div>
+        <button class="tbtn" onclick="this.textContent='✓ a little more rope';this.style.color='var(--ok)'">give me a little more rope</button>
+        <button class="tbtn">keep asking first</button>
+      </div>
+    </div>`;
+}
+$('#eveBtn').addEventListener('click',evening);
+
+/* ---------------- voice (hearth mode) ---------------- */
+$('#vYes').addEventListener('click',()=>{ $('#voiceSay').textContent='“Done — 48 GB freed, and I took a snapshot first. You\'re at 69% now.”'; $('#voiceState').textContent='spoke just now'; });
+$('#vNo').addEventListener('click',()=>{ $('#voiceSay').textContent='“No problem. I\'ll leave it.”'; });
+
+/* ---------------- voice-first soul ---------------- */
+const VF=[['you','book me a dentist, sometime next week in the morning'],
+['me','I found three openings — Tuesday 9:00, Wednesday 8:30, Thursday 9:15. Which?'],
+['you','tuesday'],
+['me','Done. Added to your calendar, and I\'ll remind you the night before.']];
+let vfRun=false;
+function runTranscript(){
+  const box=$('#vfTranscript'); box.innerHTML=''; vfRun=true; let i=0;
+  (function next(){
+    if(i>=VF.length) return;
+    const [who,txt]=VF[i]; const div=document.createElement('div');
+    div.className=who==='you'?'me':'ai'; div.textContent=(who==='you'?'you: ':'me: ')+txt;
+    box.appendChild(div); i++; setTimeout(next, who==='you'?700:1300);
+  })();
+}
+
+/* ---------------- canvas soul ---------------- */
+const NODES=[
+  {id:'ai',h:'',t:'◌ the AI',x:46,y:40,ai:true},
+  {id:'album',h:'photos',t:'Japan album',x:14,y:14},
+  {id:'chart',h:'system',t:'disk usage ▣',x:74,y:16},
+  {id:'mail',h:'drafts',t:'3 email replies',x:12,y:66},
+  {id:'tool',h:'AI wrote this',t:'rename-script.sh',x:72,y:64},
+  {id:'term',h:'live',t:'$ terminal ▮',x:44,y:78},
+];
+function buildCanvas(){
+  const area=$('#canvasArea'), svg=$('#canvasSvg');
+  $$('.node',area).forEach(n=>n.remove());
+  NODES.forEach(n=>{
+    const el=document.createElement('div');
+    el.className='node'+(n.ai?' ai':''); el.dataset.id=n.id;
+    el.style.left=n.x+'%'; el.style.top=n.y+'%';
+    el.innerHTML=(n.h?`<div class="nh">${n.h}</div>`:'')+n.t;
+    area.appendChild(el); makeDraggable(el,area,drawLines);
+  });
+  drawLines();
+}
+function drawLines(){
+  const svg=$('#canvasSvg'), area=$('#canvasArea'); if(!svg) return;
+  const ai=$('.node.ai',area); if(!ai) return;
+  const ab=ai.getBoundingClientRect(), cb=area.getBoundingClientRect();
+  const ax=ab.left-cb.left+ab.width/2, ay=ab.top-cb.top+ab.height/2;
+  let lines='';
+  $$('.node',area).forEach(n=>{ if(n.classList.contains('ai'))return;
+    const b=n.getBoundingClientRect(); const x=b.left-cb.left+b.width/2, y=b.top-cb.top+b.height/2;
+    lines+=`<line x1="${ax}" y1="${ay}" x2="${x}" y2="${y}" stroke="rgba(240,163,94,.28)" stroke-width="1.5"/>`;
+  });
+  svg.innerHTML=lines;
+}
+function makeDraggable(el,area,onMove){
+  el.addEventListener('pointerdown',e=>{
+    e.preventDefault(); el.setPointerCapture(e.pointerId);
+    const ab=area.getBoundingClientRect(); const sx=e.clientX, sy=e.clientY;
+    const startL=el.offsetLeft, startT=el.offsetTop;
+    function mv(ev){ el.style.left=(startL+(ev.clientX-sx))+'px'; el.style.top=(startT+(ev.clientY-sy))+'px'; onMove&&onMove(); }
+    function up(){ el.removeEventListener('pointermove',mv); el.removeEventListener('pointerup',up); }
+    el.addEventListener('pointermove',mv); el.addEventListener('pointerup',up);
+  });
+}
+window.addEventListener('resize',()=>{ if($('#scene-canvas').classList.contains('active')) drawLines(); });
+
+/* ---------------- desktop soul ---------------- */
+function buildDeskGrid(){
+  const g=$('#deskGrid'); if(g.childElementCount) return;
+  g.innerHTML=Array.from({length:12}).map((_,i)=>`<div class="photo" style="background:${PHOTO_GRADS[i%PHOTO_GRADS.length]}"></div>`).join('');
+}
+
+/* ---------------- guided tour ---------------- */
+const TOUR=[
+  {soul:'hearth',scene:'scene-installer',txt:'Every install bundles 200+ wifi & LAN drivers, so the machine is online anywhere. Watch the sweep — then you pick your AI.'},
+  {soul:'hearth',scene:'scene-installer',act:()=>{ $('#inst-step1').style.display='none'; $('#inst-step2').style.display='block'; },txt:'Local, API, or subscription — three equal choices, no default lean. The OS never cares which model you bring.'},
+  {soul:'hearth',scene:'scene-meeting',txt:'No desktop, no app grid to learn. The relationship starts here — like meeting a new steward.'},
+  {soul:'hearth',scene:'scene-home',act:()=>{clearSurface();morning();},txt:'Home is calm: a presence that\'s always here, a glanceable briefing, and one line for your intent. Everything else is summoned.'},
+  {soul:'hearth',scene:'scene-home',act:()=>submitIntent('japan'),txt:'You say what you want — the AI BUILDS the exact interface the task needs, then it dissolves. This is the core move: intent in, interface out.'},
+  {soul:'hearth',scene:'scene-home',txt:'Now try it yourself: drag a photo to the trash, hit “undo”, toggle “as code” to read the literal commands. You and the AI touch the same things — and everything is reversible.'},
+  {soul:'hearth',scene:'scene-voice',txt:'Or just speak. Voice leads; a surface appears only when it actually helps. This is why it isn\'t a chatbot.'},
+  {soul:'hearth',scene:'scene-home',act:evening,txt:'It can act while you\'re away — and reports back like a steward. Autonomy only grows as you grant it (“a little more rope”).'},
+  {soul:'hearth',scene:'scene-home',act:()=>submitIntent('brain'),txt:'And it remembers — legibly. This is the Brain: plain-text pages it compiles about you, plus “notes to self” for running your machine. Read, edit, or forget anything — and it survives switching AI models.'},
+  {soul:'hearth',scene:'scene-home',txt:'That was The Hearth. Use the “Soul” switch up top to compare Voice-first, Canvas, and Desktop — then tell me which one to build the architecture around.'},
+];
+let ti=-1;
+function tourGo(n){
+  ti=n; const s=TOUR[ti]; if(!s) return endTour();
+  setSoul(s.soul,false); go(s.scene);
+  setTimeout(()=>{ s.act&&s.act(); },420);
+  $('#tourStep').textContent=(ti+1)+' / '+TOUR.length;
+  $('#tourTxt').textContent=s.txt;
+  $('#tourNext').textContent = ti===TOUR.length-1 ? 'Done' : 'Next ▶';
+}
+function startTour(){ $('#tourbar').classList.add('show'); tourGo(0); }
+function endTour(){ $('#tourbar').classList.remove('show'); ti=-1; }
+$('#tourStart').addEventListener('click',startTour);
+$('#tourSkip').addEventListener('click',endTour);
+$('#tourNext').addEventListener('click',()=>{ if(ti>=TOUR.length-1) endTour(); else tourGo(ti+1); });
+
+/* ---------------- boot ---------------- */
+go('scene-home');
+</script>
+</body>
+</html>

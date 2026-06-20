@@ -1,67 +1,105 @@
 # Hearth OS
 
-*An agentic operating system on an Arch Linux base, where the machine is a **steward,
-not a tool**.* This repository is the **real codebase** — Hearth OS "line by owned
-line." The soul (**The Hearth**) and the Brain concept were validated in Phase 0 by
-the interactive prototype in [`../hearth-os-prototype/`](../hearth-os-prototype/); the
-north-star design lives in that folder's `VISION-AND-ARCHITECTURE.md`.
+> *An agentic operating system on an Arch Linux base, where the machine is a **steward, not a tool**.*
 
-## Phase 1 — the mind, the fabric, and the first Brain
+You express intent; the steward materializes the exact interface the task needs, then dissolves it.
+Every action is explainable, reversible, and yours. The intelligence is a **swappable organ**; your
+memory is **legible text** you can read, edit, and forget. **The machine is yours — and stays yours.**
 
-The first stake in the ground is **the Brain**: the system's legible, model-portable
-long-term memory. It is the most novel piece, it stands alone, and building it for
-real exercises the two seams everything else needs — the **neutral model router** and
-the **append-only activity log**.
+**Status:** built in public · **Phase 1 (the runtime) is complete** and runs on a real model.
 
-### Workspace
+---
+
+## The idea
+
+For fifty years an operating system has been a box of tools you operate. Hearth inverts that: the
+computer becomes a counterpart you collaborate with — one that can read and change every line of
+itself, act on your behalf, learn you over time, and stay accountable to you.
+
+Not the desktop (manipulating inert objects), not the chatbot (a keyhole of text), but a **shared,
+living workspace mediated by a trusted intelligence**. The breakthrough, in one line: **intent in,
+manifestation out** — and because every line is accessible, the manifestation is never a black box.
+
+The full thesis: **[docs/VISION-AND-ARCHITECTURE.md](docs/VISION-AND-ARCHITECTURE.md)**.
+
+## See it
+
+**The UI** — open **[`mockup/the-hearth.html`](mockup/the-hearth.html)** in Chrome or Edge (just
+double-click it). The definitive "Aurora" interface: an inhabited field where windows are *agent
+sessions* (not apps), attention-not-windows focus, the glass box, the living Brain. Scripted — no
+model needed.
+
+**The runtime** — a real, headless steward:
+
+```sh
+cargo run -p hearthd -- init
+cargo run -p hearthd -- do "remember I take my coffee black" --yes
+cargo run -p hearthd -- do "what do you know about me?"
+cargo run -p hearthd -- timeline      # snapshots taken before each mutating action
+cargo run -p hearthd -- undo          # one gesture reverts the last
+cargo run -p hearthd -- prompt        # the editable constitution it runs on
+```
+
+Point it at any OpenAI-compatible model and it reasons for real — OpenRouter, OpenAI, or a local
+llama.cpp / Ollama server:
+
+```sh
+export HEARTH_MODEL_URL=https://openrouter.ai/api/v1
+export HEARTH_MODEL_KEY=sk-...
+export HEARTH_MODEL_NAME=openai/gpt-4o-mini
+cargo run -p hearthd -- do "what files are in this folder"
+```
+
+## The runtime (Phase 1 — complete)
 
 | Crate | What it is |
 |---|---|
-| **`hearth-model`** | The neutral model router. Local / API / subscription backends all implement one `Model` trait; nothing above the router knows which is active. Base build is pure-Rust and offline; a real HTTP backend is behind the `online` feature. |
-| **`hearth-brain`** | The Brain (an LLM-wiki). Three layers on disk: an append-only **activity log** (ground truth), a compiled **markdown wiki** (what the steward knows — readable, editable, forgettable), and a **schema** (the rules by which raw activity becomes knowledge). Ships as the `hearth-brain` CLI. |
+| **`hearth-brain`** | Legible, model-portable long-term memory — an LLM-wiki you can read, edit, and forget. |
+| **`hearth-model`** | The neutral model router — local / API / subscription behind one trait. |
+| **`hearth-substrate`** | Snapshot-first transactions — one-gesture `undo`. |
+| **`hearth-mcp` · `hearth-mcp-fs`** | The capability fabric, as real **MCP** (JSON-RPC) servers. |
+| **`hearthd`** | The mind: assemble context → plan (real model) → permission gate → act → audit. |
 
-Future Phase 1 crates — `hearthd` (the agent runtime), the MCP capability fabric, and
-the sovereignty substrate — slot in alongside these.
+A steward that **converses with your machine, safely operates a real system with full undo, and
+learns you in the open** — proven end to end on a live LLM.
 
-## Build & run
+## The design canon
 
-Rust (stable) only — no other system dependencies. On this Windows dev box the
-toolchain is the self-contained **GNU** host (`x86_64-pc-windows-gnu`), so no Visual
-Studio is needed; the target is Arch Linux and the code is cross-platform.
+The *why* is written down. Start with the vision, then the soul of the UI.
 
-```sh
-cargo build
-cargo run -p hearth-brain -- init
-cargo run -p hearth-brain -- remember "I prefer concise replies"
-cargo run -p hearth-brain -- log --kind lesson --tag wifi \
-    "After a kernel update, rebuild the rtl8821ce DKMS module before reconnecting wifi"
-cargo run -p hearth-brain -- compile
-cargo run -p hearth-brain -- whoami        # "what do you know about me?"
-cargo run -p hearth-brain -- recall wifi
-```
-
-The Brain's data lives in `$HEARTH_HOME/brain` (default `~/.hearth/brain`), **not** in
-this source tree, and is its own git repo so `forget` is auditable and any
-consolidation can be rolled back. Override per-invocation with `--brain <dir>`.
-
-### Using a real model (optional)
-
-Consolidation runs offline by default via a deterministic heuristic compiler. To use a
-real model for semantic consolidation — any OpenAI-compatible endpoint, including a
-local llama.cpp / Ollama / vLLM server — build with the `online` feature and set:
-
-```sh
-export HEARTH_MODEL_URL=http://localhost:11434/v1   # a local server, e.g.
-export HEARTH_MODEL_NAME=llama3.1
-# export HEARTH_MODEL_KEY=...                        # for hosted APIs
-cargo run -p hearth-brain --features online -- compile
-```
-
-Because the Brain is externalized text, swapping the model never costs you what it has
-learned. That is the point: *the intelligence is swappable; the relationship is not.*
+| Document | |
+|---|---|
+| [VISION-AND-ARCHITECTURE](docs/VISION-AND-ARCHITECTURE.md) | philosophy → the Hearth spec → purist architecture → roadmap |
+| [UI-SOUL](docs/UI-SOUL.md) | the UI design language — **read before touching the UI** |
+| [APP-MODEL](docs/APP-MODEL.md) | how apps work: adopt · strip · cohere |
+| [BROWSER-INTEGRATION](docs/BROWSER-INTEGRATION.md) | the most-used surface (engine locked: Chromium/CEF via CDP) |
+| [AGENT-TRUST-MODEL](docs/AGENT-TRUST-MODEL.md) | defeating prompt injection by design |
+| [BROWSER-B1-ARCHITECTURE](docs/BROWSER-B1-ARCHITECTURE.md) | the first real web surface |
 
 ## Locked decisions
 
-- **Soul:** The Hearth. **Model strategy:** neutral (no default lean). **Build:**
-  purist (own every layer we reasonably can; kernel + drivers stay upstream but remain
-  open and AI-patchable). See the Phase 0 vision doc for the full rationale.
+- **Soul** — The Hearth: ambient presence; *intent in, manifestation out*; glass-box sovereignty.
+- **Model** — neutral: local / API / subscription are equal and swappable; no lock-in.
+- **Build** — purist: own every layer we reasonably can. The kernel + driver tree stay upstream, but
+  remain fully open and AI-patchable — that is the only boundary.
+
+## Roadmap
+
+[ROADMAP.md](ROADMAP.md). Phase 0 (soul + prototype) ✓ · Phase 1 (runtime) ✓ · **Phase 2 (the Hearth
+shell + generative surfaces) → next**.
+
+## Build
+
+Rust stable, nothing else. The target is Arch Linux; the code is cross-platform and developed on
+Windows-GNU (no Visual Studio). See [CONTRIBUTING.md](CONTRIBUTING.md) for the toolchain note.
+
+## Contributing
+
+Built in public — issues, design discussion, and PRs welcome. See **[CONTRIBUTING.md](CONTRIBUTING.md)**,
+and please read [UI-SOUL](docs/UI-SOUL.md) before any UI change.
+
+## License
+
+**[GPL-3.0-or-later](LICENSE)** — copyleft, by design. The freedom Hearth gives you can't be taken
+away downstream: no one can enclose it or ship a closed version. (The upstream kernel and drivers
+keep their own licenses.)
