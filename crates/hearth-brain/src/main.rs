@@ -185,7 +185,10 @@ fn append_guarded(brain: &Brain, kind: Kind, text: &str, tags: Vec<String>) -> R
 fn run_compile(brain: &Brain) -> Result<compile::CompileReport> {
     if std::env::var("HEARTH_MODEL_URL").is_ok() {
         match hearth_model::HttpModel::from_env() {
-            Ok(model) => return compile::consolidate(brain, &compile::ModelCompiler { model: &model }),
+            Ok(model) => match compile::consolidate(brain, &compile::ModelCompiler { model: &model }) {
+                Ok(r) => return Ok(r),
+                Err(e) => eprintln!("(model consolidation failed: {e}; using heuristic)"),
+            },
             Err(e) => eprintln!("(model backend unavailable: {e}; using heuristic)"),
         }
     }

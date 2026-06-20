@@ -41,19 +41,23 @@ impl CompileReport {
 /// Batch and idle-time by design (calm, and cheap enough for a local model).
 pub fn consolidate(brain: &Brain, compiler: &dyn Compiler) -> Result<CompileReport> {
     let cursor = log::read_cursor(&brain.cursor_path())?;
-    let new: Vec<Event> = log::since(&brain.log_path(), cursor)?
+    let tail = log::since(&brain.log_path(), cursor)?;
+    let last_id = tail.iter().map(|e| e.id).max().unwrap_or(cursor);
+    // Consolidate real knowledge only: operational audit (Action events) and forgotten
+    // entries stay in the raw log — never folded into the curated wiki.
+    let new: Vec<Event> = tail
         .into_iter()
-        .filter(|e| e.text != log::TOMBSTONE)
+        .filter(|e| e.text != log::TOMBSTONE && e.kind != log::Kind::Action)
         .collect();
 
     if new.is_empty() {
+        log::write_cursor(&brain.cursor_path(), last_id)?;
         return Ok(CompileReport {
             compiler: compiler.name().to_string(),
-            last_id: cursor,
+            last_id,
             ..Default::default()
         });
     }
-    let last_id = new.iter().map(|e| e.id).max().unwrap_or(cursor);
 
     // group the compiler's proposed edits by page
     let mut by_page: BTreeMap<String, Vec<String>> = BTreeMap::new();
@@ -133,10 +137,16 @@ impl Compiler for ModelCompiler<'_> {
     }
     fn compile(&self, schema: &Schema, events: &[Event]) -> Result<Vec<Edit>> {
         let system = "You are the consolidation pass of Hearth OS's Brain — a legible \
-            markdown wiki about the user. Given new activity-log events, distil durable \
-            knowledge into concise wiki bullets. Reply ONLY with a JSON array of objects \
-            {\"page\": one of you|rhythms|observations|people/<name>|projects/<name>|lessons/<name>, \
-            \"bullet\": a short third-person fact}. Merge duplicates; omit ephemera.";
+            markdown wiki about the user. Distil the new events into concise, third-person wiki \
+            bullets, each filed on the RIGHT page. The pages and what each holds:\n\
+            - you: the owner's preferences, traits, and how they like to be helped\n\
+            - rhythms: the owner's routines and the timing of their days\n\
+            - people/<name>: a person in the owner's life\n\
+            - projects/<name>: a project the owner is working on\n\
+            - lessons/<name>: a machine-specific strategy the steward learned\n\
+            - observations: ONLY if nothing above fits (use sparingly)\n\
+            Reply with ONLY a JSON array of objects {\"page\": <page>, \"bullet\": <short \
+            third-person fact>}. Merge duplicates; omit ephemera.";
         let mut prompt = String::from("New events:\n");
         for e in events {
             prompt.push_str(&format!("- ({:?}) {}\n", e.kind, e.text));
