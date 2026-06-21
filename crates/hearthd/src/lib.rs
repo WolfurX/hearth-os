@@ -267,6 +267,20 @@ impl Hearthd {
             emit(&StreamEvent::Surface { surface: s });
         }
 
+        // the Brain evolves on its own: fold any new activity from this turn into the legible
+        // wiki (offline heuristic — free + deterministic), so what the steward learned this turn
+        // becomes recallable next turn. The underlying raw events were already snapshotted.
+        if let Ok(report) =
+            hearth_brain::compile::consolidate(&self.brain, &hearth_brain::compile::HeuristicCompiler)
+        {
+            if report.events_folded > 0 {
+                let _ = hearth_brain::gitstore::commit_all(
+                    &self.brain.root,
+                    &format!("brain: {}", report.summary()),
+                );
+            }
+        }
+
         let result = TurnResult { recalled, planner, summary, steps };
         emit(&StreamEvent::Done { result: &result });
         Ok(result)

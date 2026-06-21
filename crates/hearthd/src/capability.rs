@@ -39,7 +39,8 @@ impl Default for Registry {
             tools: vec![
                 ToolSpec { cap: "respond", tool: "say", args: "{ text }", about: "Answer the owner in plain words (no side effects).", policy: Decision::Auto, mutating: false },
                 ToolSpec { cap: "brain", tool: "recall", args: "{ query }", about: "Look up what is known about the owner.", policy: Decision::Auto, mutating: false },
-                ToolSpec { cap: "brain", tool: "remember", args: "{ text }", about: "Write a fact or preference to the owner's memory.", policy: Decision::Ask, mutating: true },
+                ToolSpec { cap: "brain", tool: "remember", args: "{ text }", about: "Write a fact or preference the owner explicitly asked you to keep.", policy: Decision::Ask, mutating: true },
+                ToolSpec { cap: "brain", tool: "note", args: "{ text }", about: "Note something you've learned about the owner or the system on your own — folded into your memory.", policy: Decision::Auto, mutating: true },
                 ToolSpec { cap: "workspace", tool: "list", args: "{ path? }", about: "List files in your own workspace.", policy: Decision::Auto, mutating: false },
                 ToolSpec { cap: "workspace", tool: "read", args: "{ path }", about: "Read a file from your workspace.", policy: Decision::Auto, mutating: false },
                 ToolSpec { cap: "workspace", tool: "write", args: "{ path, content }", about: "Create or overwrite a file in your workspace — snapshotted, so it's undoable.", policy: Decision::Auto, mutating: true },
@@ -112,6 +113,17 @@ impl Registry {
                     vec![],
                 )?;
                 Ok(format!("remembered (#{}) — a Brain compile will fold it into the wiki", ev.id))
+            }
+            ("brain", "note") => {
+                let text = s("text");
+                if text.trim().is_empty() {
+                    anyhow::bail!("nothing to note");
+                }
+                if let Some(term) = brain.schema.forbidden_term(&text) {
+                    return Ok(format!("Didn't note that — it looks like a secret (matched \"{term}\")."));
+                }
+                let ev = hearth_brain::log::append(&brain.log_path(), hearth_brain::log::Kind::Note, &text, vec![])?;
+                Ok(format!("noted (#{}) — I'll fold it into what I know", ev.id))
             }
             ("workspace", "list") => {
                 let target = safe_join(&workspace_dir(brain), &s("path"))?;
