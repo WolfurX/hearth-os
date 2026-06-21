@@ -251,6 +251,29 @@
   .amsg.err{color:var(--warn);background:rgba(232,192,105,.06);border-color:rgba(232,192,105,.22);font-family:var(--sans)}
   .bloading{font-family:var(--serif);font-style:italic;color:var(--faint);font-size:13px;padding:6px 4px}
   .bul.ro{cursor:default}.bul.ro:hover{background:none;color:var(--muted)}
+  /* the Surface renderer — a manifestation composed from the vetted DSL (no raw code) */
+  .surfacehost:empty{display:none}
+  .surface{border:1px solid var(--line);border-radius:16px;padding:15px 16px;background:rgba(255,255,255,.025);display:flex;flex-direction:column;gap:11px;margin-bottom:12px}
+  .surf-title{font-family:var(--serif);font-size:16px;color:var(--warm);font-style:italic}
+  .surf-h{font-size:10.5px;letter-spacing:.6px;text-transform:uppercase;color:var(--faint);font-family:var(--sans)}
+  .surf-text{font-size:13.5px;line-height:1.6}
+  .surf-text.steward{font-family:var(--serif);color:var(--ink)}
+  .surf-text.system{font-family:var(--sans);color:var(--muted)}
+  .surf-text.data{font-family:var(--mono);color:var(--muted);font-size:12px}
+  .surf-list{display:flex;flex-direction:column;gap:5px}
+  .surf-bullet{font-size:13px;color:var(--muted);line-height:1.5;padding-left:14px;position:relative}
+  .surf-bullet::before{content:'';position:absolute;left:2px;top:8px;width:4px;height:4px;border-radius:50%;background:var(--warm);opacity:.7}
+  .surf-fields{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .surf-row{display:flex;justify-content:space-between;gap:10px;padding:7px 11px;border-bottom:1px solid var(--line);font-size:12px}
+  .surf-row:last-child{border-bottom:0}
+  .surf-key{color:var(--faint);font-family:var(--sans)}
+  .surf-val{color:var(--ink);font-family:var(--mono);text-align:right}
+  .surf-tiles{display:flex;gap:9px;flex-wrap:wrap}
+  .surf-tile{flex:1 1 120px;border:1px solid var(--line);border-radius:12px;padding:11px;background:rgba(255,255,255,.03)}
+  .surf-tt{font-family:var(--serif);color:var(--ink);font-size:14px;margin-bottom:3px}
+  .surf-tc{font-size:11.5px;color:var(--faint);line-height:1.45}
+  .surf-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:2px}
+  .surf-div{height:1px;background:var(--line);margin:3px 0}
 </style>
 </head>
 <body>
@@ -612,7 +635,7 @@ function liveSession(intent){
   const w=document.createElement('div');w.className='win';w.dataset.kind='live';
   w.style.left=Math.max(210,Math.min(innerWidth-460,innerWidth*0.5-220+((opened*30)%160)-60))+'px';
   w.style.top=(120+((opened*26)%150))+'px';w.style.zIndex=++zTop;
-  w.innerHTML=`<div class="winbar"><span class="bdot"></span><span class="wt">${escapeHtml(intent)}</span><span class="wpush"></span><button class="wb" data-focus title="take the room">⤢</button><button class="wb" data-aside title="set aside">–</button><button class="wb" data-x2 title="dissolve">×</button></div><div class="winbody"><div class="agentpanel"><div class="agenthd"><span class="adot"></span><span class="ast">working…</span></div><div class="thread"></div><div class="agentsay"><input placeholder="message the agent…" data-agentinput aria-label="message the agent"/><button class="as-send" data-agentsend>↗</button></div></div><div class="appcontent"><div class="glassbox"></div></div></div>`;
+  w.innerHTML=`<div class="winbar"><span class="bdot"></span><span class="wt">${escapeHtml(intent)}</span><span class="wpush"></span><button class="wb" data-focus title="take the room">⤢</button><button class="wb" data-aside title="set aside">–</button><button class="wb" data-x2 title="dissolve">×</button></div><div class="winbody"><div class="agentpanel"><div class="agenthd"><span class="adot"></span><span class="ast">working…</span></div><div class="thread"></div><div class="agentsay"><input placeholder="message the agent…" data-agentinput aria-label="message the agent"/><button class="as-send" data-agentsend>↗</button></div></div><div class="appcontent"><div class="surfacehost"></div><div class="glassbox"></div></div></div>`;
   space.appendChild(w);opened++;
   w.animate([{opacity:0,transform:'translateY(16px) scale(.98)',filter:'blur(10px)'},{opacity:1,transform:'none',filter:'blur(0)'}],{duration:560,easing:'cubic-bezier(.2,.7,.2,1)',fill:'both'});
   drag(w,w.querySelector('.winbar'));
@@ -649,6 +672,7 @@ async function runLive(w,intent,approve){
         work.innerHTML=escapeHtml(summary||'Working…')+(recalled.length?` <span style="color:var(--faint)">· recalled ${escapeHtml(recalled.join(', '))}</span>`:'');
         if(ast)ast.textContent=(ev.planner&&ev.planner!=='heuristic')?('planning · '+ev.planner):'working…';thread.scrollTop=thread.scrollHeight;}
       else if(ev.event==='step'){steps.push(ev.step);appendGlassStep(gb,ev.step);pulse();thread.scrollTop=thread.scrollHeight;}
+      else if(ev.event==='surface')renderSurface(w,ev.surface);
       else if(ev.event==='done')sawDone=true;
       else if(ev.event==='error')return liveFail(work,ast,ev.message);
     }}}
@@ -675,6 +699,30 @@ function gbStepHtml(s){
 function appendGlassStep(gb,s){const d=document.createElement('div');d.innerHTML=gbStepHtml(s);const el=d.firstElementChild;if(!el)return;gb.appendChild(el);
   el.animate&&el.animate([{opacity:0,transform:'translateY(6px)'},{opacity:1,transform:'none'}],{duration:340,easing:'cubic-bezier(.2,.7,.2,1)'});}
 function addApprove(gb,onApprove){const b=document.createElement('button');b.className='go';b.style.marginTop='4px';b.textContent='Approve & continue';b.onclick=()=>{b.disabled=true;b.textContent='…';onApprove();};gb.appendChild(b);}
+/* ---- the Surface renderer: manifestation out — a generated surface, composed from the
+   vetted DSL the runtime emits. Every string is set via textContent (never innerHTML), so
+   the shell can't be made to render raw markup — the security boundary, on the client too. */
+function mk(tag,cls,txt){const e=document.createElement(tag);if(cls)e.className=cls;if(txt!=null)e.textContent=txt;return e;}
+function renderSurface(w,spec){const host=w.querySelector('.surfacehost');if(!host||!spec)return;
+  host.innerHTML='';
+  const card=mk('div','surface');card.appendChild(mk('div','surf-title',spec.title||'A surface'));
+  (spec.nodes||[]).forEach(n=>{const el=surfaceNode(w,n);if(el)card.appendChild(el);});
+  host.appendChild(card);
+  card.animate&&card.animate([{opacity:0,transform:'translateY(10px) scale(.99)',filter:'blur(8px)'},{opacity:1,transform:'none',filter:'blur(0)'}],{duration:560,easing:'cubic-bezier(.2,.7,.2,1)',fill:'both'});
+  const wt=w.querySelector('.wt');if(wt&&spec.title)wt.textContent=spec.title;pulse();}
+function surfaceNode(w,n){switch(n&&n.node){
+  case 'heading':return mk('div','surf-h',n.text);
+  case 'text':return mk('div','surf-text '+(n.voice==='steward'?'steward':n.voice==='data'?'data':'system'),n.text);
+  case 'list':{const u=mk('div','surf-list');(n.items||[]).forEach(i=>u.appendChild(mk('div','surf-bullet',i)));return u;}
+  case 'fields':{const f=mk('div','surf-fields');(n.rows||[]).forEach(r=>{const row=mk('div','surf-row');row.appendChild(mk('span','surf-key',r.key));row.appendChild(mk('span','surf-val',r.value));f.appendChild(row);});return f;}
+  case 'tiles':{const g=mk('div','surf-tiles');(n.tiles||[]).forEach(t=>{const c=mk('div','surf-tile');c.appendChild(mk('div','surf-tt',t.title));if(t.caption)c.appendChild(mk('div','surf-tc',t.caption));g.appendChild(c);});return g;}
+  case 'actions':{const a=mk('div','surf-actions');(n.actions||[]).forEach(act=>{const b=mk('button',act.primary?'go':'link',act.label);b.onclick=()=>surfaceAct(w,act.intent);a.appendChild(b);});return a;}
+  case 'divider':return mk('div','surf-div');
+  default:return null; /* unknown component → skip (forward-safe) */
+}}
+function surfaceAct(w,intent){if(!intent)return;const thread=w.querySelector('.thread');
+  if(thread){thread.appendChild(mk('div','umsg',intent));thread.scrollTop=thread.scrollHeight;}
+  runLive(w,intent,false);}
 
 /* ---------- intent ---------- */
 const intent=$('#intent'),say=$('#say');

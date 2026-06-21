@@ -8,6 +8,7 @@
 //!                         events (the live tool-trail): `recalled` → `plan` → `step`… → `done`
 //! - `GET  /api/brain`   → the Brain's curated pages ("what do you know about me?")
 //! - `POST /api/forget`  → forget a curated page (`{page}`) → snapshot-first, undoable
+//! - `GET  /api/surface` → the canonical reference surface (the Surface DSL made tangible)
 //!
 //! Single-threaded by design: one owner, one steward, requests handled in order. A turn
 //! holds its connection open while it streams — fine, since the owner runs one task at a time.
@@ -121,6 +122,7 @@ fn respond(
             ),
         },
         ("GET", "/api/brain") => json_result(h.brain_pages()),
+        ("GET", "/api/surface") => json_result(anyhow::Ok(crate::surface::Surface::reference())),
         ("POST", "/api/forget") => {
             let v: serde_json::Value =
                 serde_json::from_slice(body).unwrap_or_else(|_| serde_json::json!({}));

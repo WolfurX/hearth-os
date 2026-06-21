@@ -11,6 +11,7 @@ pub mod plan;
 pub mod server;
 pub mod planner;
 pub mod prompt;
+pub mod surface;
 
 use anyhow::Result;
 use capability::{Decision, Registry};
@@ -21,6 +22,7 @@ use mcp::McpHost;
 use planner::{HeuristicPlanner, ModelPlanner, Planner};
 use prompt::Tier;
 use std::path::PathBuf;
+use surface::Surface;
 
 pub struct Hearthd {
     pub brain: Brain,
@@ -184,9 +186,30 @@ impl Hearthd {
             emit(&StreamEvent::Step { step: &sr });
             steps.push(sr);
         }
+
+        // manifestation out — the surface the steward materialises for this intent, if any
+        let surface = self.manifest(intent);
+        if let Some(s) = &surface {
+            emit(&StreamEvent::Surface { surface: s });
+        }
+
         let result = TurnResult { recalled, planner, summary: plan.summary, steps };
         emit(&StreamEvent::Done { result: &result });
         Ok(result)
+    }
+
+    /// Compose the generated surface for an intent — "intent in, manifestation out".
+    /// **v0 floor:** a real model will compose a bespoke surface from the DSL here; until
+    /// then the steward manifests the canonical reference surface only when explicitly asked
+    /// to *show a surface*, so the renderer is exercised through the real turn pipeline
+    /// without pretending the heuristic can author one. (Same floor/model pattern as the
+    /// planner and the Brain compiler.)
+    fn manifest(&self, intent: &str) -> Option<Surface> {
+        if intent.to_lowercase().contains("surface") {
+            Some(Surface::reference())
+        } else {
+            None
+        }
     }
 
     /// One turn, printed for the CLI (the glass box, on the terminal).
@@ -302,6 +325,8 @@ pub enum StreamEvent<'a> {
     Plan { planner: &'a str, summary: &'a str },
     /// One action, just completed (gated, maybe snapshotted, maybe run).
     Step { step: &'a StepResult },
+    /// The manifestation — a generated surface the shell renders natively.
+    Surface { surface: &'a Surface },
     /// The turn is finished; carries the full result for good measure.
     Done { result: &'a TurnResult },
 }
