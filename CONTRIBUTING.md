@@ -17,6 +17,18 @@ cargo build
 cargo run -p hearthd -- init
 cargo run -p hearthd -- do "remember I prefer concise replies" --yes
 ```
+
+**Run the shell (the live UI).** Serve the runtime and open the Aurora shell in Chrome/Edge:
+```sh
+cargo run -p hearthd -- serve --ui mockup/the-hearth.html
+# then open http://127.0.0.1:7878
+```
+Type an intent and the real steward answers: the tool-trail streams live, every action is gated and
+snapshot-undoable (`hearthd undo`), the Brain view shows what it has learned, and *"show me a surface"*
+manifests a generated surface. With no model it runs on the offline heuristic floor; set
+`HEARTH_MODEL_URL` / `HEARTH_MODEL_KEY` / `HEARTH_MODEL_NAME` (any OpenAI-compatible endpoint) to bring
+the steward fully alive.
+
 **Windows-GNU note.** Development uses the self-contained GNU host (`x86_64-pc-windows-gnu`) — no
 Visual Studio required. We deliberately keep the build lean and sidestep the `windows-sys`/`dlltool`
 and Rust-TLS C-toolchain pitfalls (hence the tiny `clock.rs` instead of `chrono`, trimmed `clap`
