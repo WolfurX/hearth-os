@@ -224,6 +224,12 @@
   .win.focused{position:fixed;left:50%;top:46px;transform:translateX(-50%);width:min(1080px,94vw)!important;height:calc(100vh - 88px);z-index:60;display:flex;flex-direction:column;overflow:hidden}
   .win.focused .winbody{flex:1;min-height:0;overflow:hidden}
   .win.focused .viewport{max-height:62vh}
+  /* literal full screen — for sinking into one task */
+  .win.full{position:fixed!important;inset:0!important;left:0!important;top:0!important;transform:none!important;width:100vw!important;height:100vh!important;max-width:none;border:0;border-radius:0;z-index:60;display:flex;flex-direction:column;overflow:hidden}
+  .win.full .winbody{flex:1;min-height:0;overflow:hidden}
+  .win.full .viewport{max-height:82vh}
+  /* enlarged states: let the thread fill so the type box sits at the bottom, not stranded mid-panel */
+  .win.focused .thread,.win.full .thread{max-height:none}
   body.focusing .win:not(.focused){opacity:.10;filter:blur(3px);transform:scale(.94);pointer-events:none;transition:.5s}
   body.focusing .hearth,body.focusing .intent,body.focusing .feed,body.focusing .status,body.focusing .corner,body.focusing .dock{opacity:.18;filter:blur(2px);pointer-events:none;transition:.5s}
   .backpill{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:70;display:none;align-items:center;gap:9px;font-family:inherit;font-size:12.5px;color:var(--warm);background:var(--glass-2);border:1px solid rgba(244,162,89,.3);border-radius:999px;padding:7px 16px;cursor:pointer;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
@@ -556,8 +562,22 @@ const space=$('#os');let zTop=10,opened=0,undoStack=null;const dock=$('#dock');
 function focusWin(w){w.style.zIndex=++zTop;}
 const backpill=$('#backpill');
 /* attention depths: bring one surface forward (immersive) and recede the rest */
-function focusSurface(w){ document.querySelectorAll('.win.focused').forEach(x=>{ if(x!==w) x.classList.remove('focused'); }); w.classList.add('focused'); document.body.classList.add('focusing'); focusWin(w); backpill.classList.add('show'); }
-function unfocus(){ document.querySelectorAll('.win.focused').forEach(x=>x.classList.remove('focused')); document.body.classList.remove('focusing'); backpill.classList.remove('show'); }
+/* three sizes: small (windowed) · big (takes the room) · full (literal full screen, for deep focus) */
+function setSize(w,size){
+  document.querySelectorAll('.win.focused,.win.full').forEach(x=>{ if(x!==w){ x.classList.remove('focused','full'); restoreBox(x); const bb=x.querySelector('[data-focus]'); if(bb){bb.textContent='⤢';bb.title='enlarge';} } });
+  w.classList.remove('focused','full');
+  if(size==='small'){ restoreBox(w); }
+  else { if(!w._box) w._box={left:w.style.left,top:w.style.top,width:w.style.width}; w.style.left='';w.style.top='';w.style.width=''; w.classList.add(size==='full'?'full':'focused'); }
+  const immersive = size!=='small';
+  document.body.classList.toggle('focusing', immersive);
+  backpill.classList.toggle('show', immersive);
+  if(immersive) focusWin(w);
+  const b=w.querySelector('[data-focus]'); if(b){ b.textContent={small:'⤢',big:'⛶',full:'⤡'}[size]; b.title={small:'enlarge',big:'full screen',full:'restore'}[size]; }
+}
+function restoreBox(w){ if(w._box){ w.style.left=w._box.left; w.style.top=w._box.top; w.style.width=w._box.width; w._box=null; } }
+function cycleSize(w){ const cur=w.classList.contains('full')?'full':w.classList.contains('focused')?'big':'small'; setSize(w,{small:'big',big:'full',full:'small'}[cur]); }
+function focusSurface(w){ setSize(w,'big'); }
+function unfocus(){ document.querySelectorAll('.win.focused,.win.full').forEach(x=>setSize(x,'small')); }
 backpill.onclick=unfocus;
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') unfocus(); });
 function summon(kind,opts){opts=opts||{};
@@ -578,7 +598,7 @@ function summon(kind,opts){opts=opts||{};
   w.addEventListener('pointerdown',()=>focusWin(w),true);
   w.querySelector('[data-x2]').onclick=()=>closeWin(w);
   w.querySelector('[data-aside]').onclick=()=>aside(w,kind);
-  w.querySelector('[data-focus]').onclick=()=>focusSurface(w);
+  w.querySelector('[data-focus]').onclick=()=>cycleSize(w);
   w.querySelector('.winbar').addEventListener('dblclick',e=>{if(!e.target.closest('.wb'))focusSurface(w);});
   wireAgentbar(w,kind);
   agentBoot(w,kind,opts.task);
@@ -646,7 +666,7 @@ function liveSession(intent){
   w.addEventListener('pointerdown',()=>focusWin(w),true);
   w.querySelector('[data-x2]').onclick=()=>closeWin(w);
   w.querySelector('[data-aside]').onclick=()=>aside(w,'live');
-  w.querySelector('[data-focus]').onclick=()=>focusSurface(w);
+  w.querySelector('[data-focus]').onclick=()=>cycleSize(w);
   w.querySelector('.winbar').addEventListener('dblclick',e=>{if(!e.target.closest('.wb'))focusSurface(w);});
   const input=w.querySelector('[data-agentinput]'),send=w.querySelector('[data-agentsend]');
   const go=()=>{const t=(input.value||'').trim();if(!t)return;input.value='';const u=document.createElement('div');u.className='umsg';u.textContent=t;w.querySelector('.thread').appendChild(u);runLive(w,t,false);};
