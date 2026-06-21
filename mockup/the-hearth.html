@@ -90,6 +90,7 @@
   .winbar:active{cursor:grabbing}
   .winbar .wt{font-size:12px;color:var(--muted);letter-spacing:.3px} .winbar .wpush{flex:1}
   .wb{width:24px;height:24px;border-radius:8px;border:1px solid var(--line);background:rgba(255,255,255,.04);color:var(--muted);cursor:pointer;font-size:14px;line-height:1;display:grid;place-items:center;transition:.15s}
+  .wb.on{color:var(--warm);border-color:rgba(244,162,89,.45);background:rgba(244,162,89,.10)}
   .wb:hover{color:var(--ink);border-color:var(--edge)}
   /* a session window: left = converse with the agent, right = the workspace it opened */
   .winbody{display:flex;align-items:stretch}
@@ -582,7 +583,7 @@ const backpill=$('#backpill');
 /* attention depths: bring one surface forward (immersive) and recede the rest */
 /* three sizes: small (windowed) · big (takes the room) · full (literal full screen, for deep focus) */
 function setSize(w,size){
-  document.querySelectorAll('.win.focused,.win.full').forEach(x=>{ if(x!==w){ x.classList.remove('focused','full'); restoreBox(x); const bb=x.querySelector('[data-focus]'); if(bb){bb.textContent='⤢';bb.title='enlarge';} } });
+  document.querySelectorAll('.win.focused,.win.full').forEach(x=>{ if(x!==w){ x.classList.remove('focused','full'); restoreBox(x); markSize(x,'small'); } });
   w.classList.remove('focused','full');
   if(size==='small'){ restoreBox(w); }
   else { if(!w._box) w._box={left:w.style.left,top:w.style.top,width:w.style.width}; w.style.left='';w.style.top='';w.style.width=''; try{w.getAnimations().forEach(a=>a.cancel());}catch(e){} w.classList.add(size==='full'?'full':'focused'); }
@@ -590,10 +591,10 @@ function setSize(w,size){
   document.body.classList.toggle('focusing', immersive);
   backpill.classList.toggle('show', immersive);
   if(immersive) focusWin(w);
-  const b=w.querySelector('[data-focus]'); if(b){ b.textContent={small:'⤢',big:'⛶',full:'⤡'}[size]; b.title={small:'enlarge',big:'full screen',full:'restore'}[size]; }
+  markSize(w,size);
 }
+function markSize(w,size){ w.querySelectorAll('[data-size]').forEach(b=>b.classList.toggle('on', b.dataset.size===size)); }
 function restoreBox(w){ if(w._box){ w.style.left=w._box.left; w.style.top=w._box.top; w.style.width=w._box.width; w._box=null; } }
-function cycleSize(w){ const cur=w.classList.contains('full')?'full':w.classList.contains('focused')?'big':'small'; setSize(w,{small:'big',big:'full',full:'small'}[cur]); }
 function focusSurface(w){ setSize(w,'big'); }
 function unfocus(){ document.querySelectorAll('.win.focused,.win.full').forEach(x=>setSize(x,'small')); }
 backpill.onclick=unfocus;
@@ -609,14 +610,13 @@ function summon(kind,opts){opts=opts||{};
   const x=opts.x ?? Math.max(210,Math.min(innerWidth-460,innerWidth*0.5-220+((opened*30)%160)-60));
   const y=opts.y ?? (120+((opened*26)%150));
   w.style.left=x+'px';w.style.top=y+'px';w.style.zIndex=++zTop;
-  w.innerHTML=`<div class="winbar"><span class="bdot"></span><span class="wt">${opts.task||(SESSIONS[kind]&&SESSIONS[kind].task)||TITLES[kind]||kind}</span><span class="wpush"></span><button class="wb" data-focus title="take the room">⤢</button><button class="wb" data-aside title="set aside">–</button><button class="wb" data-x2 title="dissolve">×</button></div><div class="winbody"><div class="agentpanel">${agentStrip(kind)}</div><div class="appcontent">${build()}</div></div>`;
+  w.innerHTML=`<div class="winbar"><span class="bdot"></span><span class="wt">${opts.task||(SESSIONS[kind]&&SESSIONS[kind].task)||TITLES[kind]||kind}</span><span class="wpush"></span><button class="wb on" data-size="small" title="fit to content">⤡</button><button class="wb" data-size="big" title="bigger window">⤢</button><button class="wb" data-size="full" title="full screen">⛶</button><button class="wb" data-x2 title="close">×</button></div><div class="winbody"><div class="agentpanel">${agentStrip(kind)}</div><div class="appcontent">${build()}</div></div>`;
   space.appendChild(w);opened++;if(kind==='browser'){w.style.width='min(560px,92vw)';focusSurface(w);}
   w.animate([{opacity:0,transform:'translateY(16px) scale(.98)',filter:'blur(10px)'},{opacity:1,transform:'none',filter:'blur(0)'}],{duration:560,easing:'cubic-bezier(.2,.7,.2,1)',fill:'both'});
   drag(w,w.querySelector('.winbar'));wire(w,kind);
   w.addEventListener('pointerdown',()=>focusWin(w),true);
   w.querySelector('[data-x2]').onclick=()=>closeWin(w);
-  w.querySelector('[data-aside]').onclick=()=>aside(w,kind);
-  w.querySelector('[data-focus]').onclick=()=>cycleSize(w);
+  w.querySelectorAll('[data-size]').forEach(b=>b.onclick=()=>setSize(w,b.dataset.size));
   w.querySelector('.winbar').addEventListener('dblclick',e=>{if(!e.target.closest('.wb'))focusSurface(w);});
   wireAgentbar(w,kind);
   agentBoot(w,kind,opts.task);
@@ -677,14 +677,13 @@ function liveSession(intent){
   const w=document.createElement('div');w.className='win';w.dataset.kind='live';
   w.style.left=Math.max(210,Math.min(innerWidth-460,innerWidth*0.5-220+((opened*30)%160)-60))+'px';
   w.style.top=(120+((opened*26)%150))+'px';w.style.zIndex=++zTop;
-  w.innerHTML=`<div class="winbar"><span class="bdot"></span><span class="wt">${escapeHtml(intent)}</span><span class="wpush"></span><button class="wb" data-focus title="take the room">⤢</button><button class="wb" data-aside title="set aside">–</button><button class="wb" data-x2 title="dissolve">×</button></div><div class="winbody"><div class="agentpanel"><div class="agenthd"><span class="adot"></span><span class="ast">working…</span></div><div class="thread"></div><div class="agentsay"><input placeholder="message the agent…" data-agentinput aria-label="message the agent"/><button class="as-send" data-agentsend>↗</button></div></div><div class="appcontent"><div class="surfacehost"></div><div class="glassbox"></div></div></div>`;
+  w.innerHTML=`<div class="winbar"><span class="bdot"></span><span class="wt">${escapeHtml(intent)}</span><span class="wpush"></span><button class="wb on" data-size="small" title="fit to content">⤡</button><button class="wb" data-size="big" title="bigger window">⤢</button><button class="wb" data-size="full" title="full screen">⛶</button><button class="wb" data-x2 title="close">×</button></div><div class="winbody"><div class="agentpanel"><div class="agenthd"><span class="adot"></span><span class="ast">working…</span></div><div class="thread"></div><div class="agentsay"><input placeholder="message the agent…" data-agentinput aria-label="message the agent"/><button class="as-send" data-agentsend>↗</button></div></div><div class="appcontent"><div class="surfacehost"></div><div class="glassbox"></div></div></div>`;
   space.appendChild(w);opened++;
   w.animate([{opacity:0,transform:'translateY(16px) scale(.98)',filter:'blur(10px)'},{opacity:1,transform:'none',filter:'blur(0)'}],{duration:560,easing:'cubic-bezier(.2,.7,.2,1)',fill:'both'});
   drag(w,w.querySelector('.winbar'));
   w.addEventListener('pointerdown',()=>focusWin(w),true);
   w.querySelector('[data-x2]').onclick=()=>closeWin(w);
-  w.querySelector('[data-aside]').onclick=()=>aside(w,'live');
-  w.querySelector('[data-focus]').onclick=()=>cycleSize(w);
+  w.querySelectorAll('[data-size]').forEach(b=>b.onclick=()=>setSize(w,b.dataset.size));
   w.querySelector('.winbar').addEventListener('dblclick',e=>{if(!e.target.closest('.wb'))focusSurface(w);});
   const input=w.querySelector('[data-agentinput]'),send=w.querySelector('[data-agentsend]');
   const go=()=>{const t=(input.value||'').trim();if(!t)return;input.value='';const u=document.createElement('div');u.className='umsg';u.textContent=t;w.querySelector('.thread').appendChild(u);runLive(w,t,false);};
