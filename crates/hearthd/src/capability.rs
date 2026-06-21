@@ -6,6 +6,7 @@
 use anyhow::Result;
 use hearth_brain::Brain;
 use serde_json::Value;
+use std::path::{Path, PathBuf};
 
 /// What the steward may do with a tool, decided before it runs.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -39,6 +40,9 @@ impl Default for Registry {
                 ToolSpec { cap: "respond", tool: "say", args: "{ text }", about: "Answer the owner in plain words (no side effects).", policy: Decision::Auto, mutating: false },
                 ToolSpec { cap: "brain", tool: "recall", args: "{ query }", about: "Look up what is known about the owner.", policy: Decision::Auto, mutating: false },
                 ToolSpec { cap: "brain", tool: "remember", args: "{ text }", about: "Write a fact or preference to the owner's memory.", policy: Decision::Ask, mutating: true },
+                ToolSpec { cap: "workspace", tool: "list", args: "{ path? }", about: "List files in your own workspace.", policy: Decision::Auto, mutating: false },
+                ToolSpec { cap: "workspace", tool: "read", args: "{ path }", about: "Read a file from your workspace.", policy: Decision::Auto, mutating: false },
+                ToolSpec { cap: "workspace", tool: "write", args: "{ path, content }", about: "Create or overwrite a file in your workspace — snapshotted, so it's undoable.", policy: Decision::Auto, mutating: true },
             ],
         }
     }
@@ -109,7 +113,55 @@ impl Registry {
                 )?;
                 Ok(format!("remembered (#{}) — a Brain compile will fold it into the wiki", ev.id))
             }
+            ("workspace", "list") => {
+                let target = safe_join(&workspace_dir(brain), &s("path"))?;
+                if !target.exists() {
+                    return Ok("your workspace is empty".into());
+                }
+                let mut items: Vec<String> = std::fs::read_dir(&target)?
+                    .filter_map(|e| e.ok())
+                    .map(|e| {
+                        let n = e.file_name().to_string_lossy().into_owned();
+                        if e.path().is_dir() { format!("{n}/") } else { n }
+                    })
+                    .collect();
+                items.sort();
+                Ok(if items.is_empty() { "(empty)".into() } else { format!("workspace: {}", items.join("  ")) })
+            }
+            ("workspace", "read") => {
+                let target = safe_join(&workspace_dir(brain), &s("path"))?;
+                std::fs::read_to_string(&target).map_err(|e| anyhow::anyhow!("can't read {}: {e}", s("path")))
+            }
+            ("workspace", "write") => {
+                let rel = s("path");
+                if rel.trim().is_empty() {
+                    anyhow::bail!("need a file path to write to");
+                }
+                let content = args.get("content").and_then(|v| v.as_str()).unwrap_or("");
+                let target = safe_join(&workspace_dir(brain), &rel)?;
+                if let Some(parent) = target.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                std::fs::write(&target, content)?;
+                Ok(format!("wrote {rel} ({} bytes) to your workspace", content.len()))
+            }
             _ => anyhow::bail!("unknown or unpermitted tool {cap}.{tool}"),
         }
     }
+}
+
+/// The steward's own writable space — a sibling of the Brain in its home (`~/.hearth/workspace`).
+/// It's part of the home the substrate snapshots, so everything written here is undoable.
+fn workspace_dir(brain: &Brain) -> PathBuf {
+    brain.root.parent().map(|p| p.join("workspace")).unwrap_or_else(|| PathBuf::from("workspace"))
+}
+
+/// Join a relative path under `base`, refusing anything that would escape it (absolute paths or
+/// `..`). The workspace is the steward's sandbox — a tool can't reach outside it.
+fn safe_join(base: &Path, rel: &str) -> Result<PathBuf> {
+    let rel = rel.trim().trim_start_matches(['/', '\\']);
+    if Path::new(rel).is_absolute() || rel.split(['/', '\\']).any(|seg| seg == "..") {
+        anyhow::bail!("path must stay within your workspace");
+    }
+    Ok(base.join(rel))
 }

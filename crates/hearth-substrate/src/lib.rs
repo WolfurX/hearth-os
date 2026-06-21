@@ -112,12 +112,18 @@ fn append_line(path: &Path, line: &str) -> Result<()> {
     Ok(())
 }
 
-/// Recursively copy `src` → `dst`, skipping `.git` (git internals are left in place).
+/// Entries never copied into / cleared from a snapshot: git internals, and the snapshot store
+/// itself — so a protected dir that *contains* the store never recurses or self-deletes.
+fn skip_in_snapshot(name: &std::ffi::OsStr) -> bool {
+    name == ".git" || name == ".substrate"
+}
+
+/// Recursively copy `src` → `dst`, skipping `.git` and the snapshot store.
 fn copy_tree(src: &Path, dst: &Path) -> Result<()> {
     std::fs::create_dir_all(dst)?;
     for entry in std::fs::read_dir(src)? {
         let entry = entry?;
-        if entry.file_name() == ".git" {
+        if skip_in_snapshot(&entry.file_name()) {
             continue;
         }
         let from = entry.path();
@@ -136,7 +142,7 @@ fn restore_tree(snap: &Path, dst: &Path) -> Result<()> {
     if dst.exists() {
         for entry in std::fs::read_dir(dst)? {
             let entry = entry?;
-            if entry.file_name() == ".git" {
+            if skip_in_snapshot(&entry.file_name()) {
                 continue;
             }
             let p = entry.path();

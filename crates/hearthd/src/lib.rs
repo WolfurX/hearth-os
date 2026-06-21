@@ -43,12 +43,12 @@ impl Hearthd {
             .parent()
             .map(|p| p.join("prompt"))
             .unwrap_or_else(|| PathBuf::from("prompt"));
-        let store = brain
-            .root
-            .parent()
-            .map(|p| p.join(".substrate"))
-            .unwrap_or_else(|| PathBuf::from(".substrate"));
-        let substrate = Substrate::new(brain.root.clone(), store);
+        // The steward's whole home (Brain + workspace + constitution) is one undoable unit:
+        // the substrate snapshots it before any mutation. The store lives inside the home but is
+        // skipped by the snapshot, so nothing ever nests. `hearthd undo` reverts the last action.
+        let home = brain.root.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| brain.root.clone());
+        let store = home.join(".substrate");
+        let substrate = Substrate::new(home, store);
 
         // Connect MCP capability servers shipped next to this binary.
         let exe_dir = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_path_buf()));
