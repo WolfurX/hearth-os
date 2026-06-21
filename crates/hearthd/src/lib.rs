@@ -97,6 +97,19 @@ impl Hearthd {
         self.host.has(&name) && mcp::mutating(&name)
     }
 
+    /// For a mutating tool, the single external file it changes — so the substrate guards just
+    /// that file rather than snapshotting the steward's whole home. `None` means the mutation is
+    /// home-scoped (Brain or workspace) and the whole-home snapshot already covers it.
+    fn guard_target(&self, cap: &str, tool: &str, args: &serde_json::Value) -> Option<std::path::PathBuf> {
+        match (cap, tool) {
+            ("fs", "write") => args
+                .get("path")
+                .and_then(|v| v.as_str())
+                .map(|p| std::path::PathBuf::from(p.trim())),
+            _ => None,
+        }
+    }
+
     /// Run a tool — in-process if we serve it, otherwise over MCP.
     fn execute_tool(&self, cap: &str, tool: &str, args: &serde_json::Value) -> Result<String> {
         if self.registry.knows(cap, tool) {
@@ -222,9 +235,11 @@ impl Hearthd {
                     && !(matches!(decision, Decision::Ask) && !approve);
                 if run_it {
                     if self.mutates(cap, tool) {
-                        let (txid, r) = self
-                            .substrate
-                            .transact(&format!("{cap}.{tool}"), || self.execute_tool(cap, tool, args))?;
+                        let summary = format!("{cap}.{tool}");
+                        let (txid, r) = match self.guard_target(cap, tool, args) {
+                            Some(t) => self.substrate.guard_file(&t, &summary, || self.execute_tool(cap, tool, args))?,
+                            None => self.substrate.transact(&summary, || self.execute_tool(cap, tool, args))?,
+                        };
                         sr.snapshot = Some(txid);
                         sr.result = Some(r);
                     } else {

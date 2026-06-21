@@ -22,6 +22,14 @@ pub struct Txn {
     pub snapshot: PathBuf,
     #[serde(default)]
     pub undone: bool,
+    /// For a per-file guard: the path the snapshot restores to. `None` = a whole-home snapshot
+    /// (the default and the legacy shape) restored over `protected`.
+    #[serde(default)]
+    pub target: Option<PathBuf>,
+    /// For a guarded path: did the file exist when guarded? If not, undo deletes what the action
+    /// created rather than restoring anything.
+    #[serde(default)]
+    pub existed: bool,
 }
 
 /// Guards a `protected` directory (the steward's mutable state — the Brain). Snapshots and
@@ -69,7 +77,47 @@ impl Substrate {
 
         let result = action()?;
 
-        let txn = Txn { id, ts: now(), summary: summary.to_string(), snapshot: snap, undone: false };
+        let txn = Txn {
+            id,
+            ts: now(),
+            summary: summary.to_string(),
+            snapshot: snap,
+            undone: false,
+            target: None,
+            existed: false,
+        };
+        append_line(&self.log_path(), &serde_json::to_string(&txn)?)?;
+        Ok((id, result))
+    }
+
+    /// Guard a single external file before a mutating action that targets it — back up just that
+    /// file (or note its absence), run the action, record the transaction. Used for writes the
+    /// whole-home snapshot can't cover (the owner's real files). Undo restores exactly this file.
+    pub fn guard_file<T>(
+        &self,
+        target: &Path,
+        summary: &str,
+        action: impl FnOnce() -> Result<T>,
+    ) -> Result<(u64, T)> {
+        std::fs::create_dir_all(self.snaps_dir())?;
+        let id = self.timeline()?.iter().map(|t| t.id).max().unwrap_or(0) + 1;
+        let snap = self.snaps_dir().join(id.to_string());
+        let existed = target.exists();
+        if existed {
+            std::fs::copy(target, &snap).context("backing up the file before the action")?;
+        }
+
+        let result = action()?;
+
+        let txn = Txn {
+            id,
+            ts: now(),
+            summary: summary.to_string(),
+            snapshot: snap,
+            undone: false,
+            target: Some(target.to_path_buf()),
+            existed,
+        };
         append_line(&self.log_path(), &serde_json::to_string(&txn)?)?;
         Ok((id, result))
     }
@@ -85,7 +133,10 @@ impl Substrate {
         .context("nothing to undo")?;
 
         let txn = txns[idx].clone();
-        restore_tree(&txn.snapshot, &self.protected).context("restoring the snapshot")?;
+        match &txn.target {
+            None => restore_tree(&txn.snapshot, &self.protected).context("restoring the snapshot")?,
+            Some(t) => restore_file(&txn.snapshot, t, txn.existed).context("restoring the file")?,
+        }
         txns[idx].undone = true;
 
         let body: String = txns
@@ -154,4 +205,18 @@ fn restore_tree(snap: &Path, dst: &Path) -> Result<()> {
         }
     }
     copy_tree(snap, dst)
+}
+
+/// Restore a single guarded file: copy the backup back if the file existed, otherwise remove
+/// whatever the action created (it wasn't there before).
+fn restore_file(snap: &Path, target: &Path, existed: bool) -> Result<()> {
+    if existed {
+        if let Some(p) = target.parent() {
+            std::fs::create_dir_all(p)?;
+        }
+        std::fs::copy(snap, target)?;
+    } else if target.exists() {
+        std::fs::remove_file(target)?;
+    }
+    Ok(())
 }
