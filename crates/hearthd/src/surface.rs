@@ -37,6 +37,9 @@ pub enum Node {
     Tiles { tiles: Vec<Tile> },
     /// Buttons that hand an intent back to the steward — manifestation bound to action.
     Actions { actions: Vec<Action> },
+    /// An editable text field — the bidirectional seam: what the owner types here streams
+    /// back to the steward as a structured edit (recorded through the privacy floor).
+    Note { label: String, value: String },
     /// A hairline rule.
     Divider,
 }
@@ -111,6 +114,10 @@ impl Surface {
                         Tile { title: "Calm".into(), caption: "it arrives; it never demands".into() },
                         Tile { title: "Yours".into(), caption: "cheap, disposable, intent-shaped".into() },
                     ],
+                },
+                Node::Note {
+                    label: "Anything you want me to remember".into(),
+                    value: String::new(),
                 },
                 Node::Divider,
                 Node::Actions {

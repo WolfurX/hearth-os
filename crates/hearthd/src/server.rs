@@ -9,6 +9,7 @@
 //! - `GET  /api/brain`   → the Brain's curated pages ("what do you know about me?")
 //! - `POST /api/forget`  → forget a curated page (`{page}`) → snapshot-first, undoable
 //! - `GET  /api/surface` → the canonical reference surface (the Surface DSL made tangible)
+//! - `POST /api/surface/event` → an edit the owner made to a live surface (`{node,kind,value}`) → recorded
 //!
 //! Single-threaded by design: one owner, one steward, requests handled in order. A turn
 //! holds its connection open while it streams — fine, since the owner runs one task at a time.
@@ -123,6 +124,17 @@ fn respond(
         },
         ("GET", "/api/brain") => json_result(h.brain_pages()),
         ("GET", "/api/surface") => json_result(anyhow::Ok(crate::surface::Surface::reference())),
+        ("POST", "/api/surface/event") => {
+            let v: serde_json::Value =
+                serde_json::from_slice(body).unwrap_or_else(|_| serde_json::json!({}));
+            let node = v.get("node").and_then(|x| x.as_str()).unwrap_or("note").to_string();
+            let kind = v.get("kind").and_then(|x| x.as_str()).unwrap_or("edit").to_string();
+            let value = v.get("value").and_then(|x| x.as_str()).unwrap_or("").trim().to_string();
+            if value.is_empty() {
+                return ("400 Bad Request", "application/json", br#"{"error":"no value"}"#.to_vec());
+            }
+            json_result(h.surface_event(&node, &kind, &value))
+        }
         ("POST", "/api/forget") => {
             let v: serde_json::Value =
                 serde_json::from_slice(body).unwrap_or_else(|_| serde_json::json!({}));

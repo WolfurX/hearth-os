@@ -274,6 +274,10 @@
   .surf-tc{font-size:11.5px;color:var(--faint);line-height:1.45}
   .surf-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:2px}
   .surf-div{height:1px;background:var(--line);margin:3px 0}
+  .surf-note{display:flex;flex-direction:column;gap:6px}
+  .surf-input{min-height:52px;background:rgba(0,0,0,.18);border:1px solid var(--line);border-radius:10px;padding:9px 11px;font-size:13px;line-height:1.55;color:var(--ink);font-family:var(--sans);outline:0}
+  .surf-input:focus{border-color:rgba(244,162,89,.5);background:rgba(0,0,0,.24)}
+  .surf-input:empty::before{content:attr(data-ph);color:var(--faint)}
 </style>
 </head>
 <body>
@@ -717,12 +721,22 @@ function surfaceNode(w,n){switch(n&&n.node){
   case 'fields':{const f=mk('div','surf-fields');(n.rows||[]).forEach(r=>{const row=mk('div','surf-row');row.appendChild(mk('span','surf-key',r.key));row.appendChild(mk('span','surf-val',r.value));f.appendChild(row);});return f;}
   case 'tiles':{const g=mk('div','surf-tiles');(n.tiles||[]).forEach(t=>{const c=mk('div','surf-tile');c.appendChild(mk('div','surf-tt',t.title));if(t.caption)c.appendChild(mk('div','surf-tc',t.caption));g.appendChild(c);});return g;}
   case 'actions':{const a=mk('div','surf-actions');(n.actions||[]).forEach(act=>{const b=mk('button',act.primary?'go':'link',act.label);b.onclick=()=>surfaceAct(w,act.intent);a.appendChild(b);});return a;}
+  case 'note':{const wrap=mk('div','surf-note');wrap.appendChild(mk('div','surf-h',n.label||'Note'));
+    const inp=mk('div','surf-input');inp.contentEditable='true';inp.setAttribute('role','textbox');inp.setAttribute('aria-label',n.label||'note');inp.dataset.ph=n.label||'Write…';if(n.value)inp.textContent=n.value;
+    inp.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();inp.blur();}};
+    inp.onblur=()=>surfaceEdit(w,n.label||'note',(inp.textContent||'').trim());wrap.appendChild(inp);return wrap;}
   case 'divider':return mk('div','surf-div');
   default:return null; /* unknown component → skip (forward-safe) */
 }}
 function surfaceAct(w,intent){if(!intent)return;const thread=w.querySelector('.thread');
   if(thread){thread.appendChild(mk('div','umsg',intent));thread.scrollTop=thread.scrollHeight;}
   runLive(w,intent,false);}
+/* bidirectional: an edit the owner makes streams back to the steward (recorded, privacy-floored) */
+async function surfaceEdit(w,node,value){if(!value)return;const title=(w.querySelector('.surf-title')||{}).textContent||'';
+  try{const r=await api('/api/surface/event',{surface:title,node,kind:'edit',value});
+    if(r&&r.refused){pulse();toast('Kept that out of memory — it looked like a secret.');}
+    else{attend(.5);toast('Noted — I\'ll remember that.');}}
+  catch(e){toast('Couldn\'t save that — '+e.message);}}
 
 /* ---------- intent ---------- */
 const intent=$('#intent'),say=$('#say');

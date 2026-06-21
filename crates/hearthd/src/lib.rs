@@ -276,6 +276,28 @@ impl Hearthd {
             })?;
         Ok(ForgetResult { page, removed, redacted, snapshot })
     }
+
+    /// Record a structured edit the owner made to a live surface — the bidirectional half of
+    /// generative surfaces (VISION §2.4). The edit becomes ground truth in the Brain (so the
+    /// steward can learn from it), through the same **privacy floor** as everything else: a
+    /// value that looks like a secret is refused, never written. v0 floor: we record + audit;
+    /// a model will later *interpret* the edit ("you removed 4 photos") from this same signal.
+    pub fn surface_event(&self, node: &str, kind: &str, value: &str) -> Result<SurfaceEventResult> {
+        if let Some(term) = self.brain.schema.forbidden_term(value) {
+            return Ok(SurfaceEventResult {
+                recorded: None,
+                refused: true,
+                note: format!("refused — that looks like a secret (matched \"{term}\")"),
+            });
+        }
+        let ev = hearth_brain::log::append(
+            &self.brain.log_path(),
+            hearth_brain::log::Kind::Note,
+            &format!("surface {kind} · {node}: {value}"),
+            vec!["surface".into()],
+        )?;
+        Ok(SurfaceEventResult { recorded: Some(ev.id), refused: false, note: String::new() })
+    }
 }
 
 /// The result of one turn — what the steward recalled, planned, and did.
@@ -312,6 +334,14 @@ pub struct ForgetResult {
     pub removed: bool,
     pub redacted: usize,
     pub snapshot: u64,
+}
+
+/// The outcome of a surface edit: the raw-log id it became, or a privacy-floor refusal.
+#[derive(serde::Serialize)]
+pub struct SurfaceEventResult {
+    pub recorded: Option<u64>,
+    pub refused: bool,
+    pub note: String,
 }
 
 /// A turn's progress, streamed live so the shell can show the tool-trail as it happens.
