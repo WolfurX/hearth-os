@@ -187,8 +187,18 @@ impl Hearthd {
             steps.push(sr);
         }
 
-        // manifestation out — the surface the steward materialises for this intent, if any
-        let surface = self.manifest(intent);
+        // manifestation out — a bespoke surface composed (by the model, from the DSL) for this intent
+        let context = format!(
+            "recalled: {}\nsummary: {}\nresults:\n{}",
+            if recalled.is_empty() { "(nothing)".to_string() } else { recalled.join(", ") },
+            plan.summary,
+            steps
+                .iter()
+                .filter_map(|s| s.result.as_ref().map(|r| format!("- {}.{}: {}", s.capability, s.tool, r)))
+                .collect::<Vec<_>>()
+                .join("\n"),
+        );
+        let surface = self.manifest(model.as_ref(), intent, &context);
         if let Some(s) = &surface {
             emit(&StreamEvent::Surface { surface: s });
         }
@@ -198,13 +208,23 @@ impl Hearthd {
         Ok(result)
     }
 
-    /// Compose the generated surface for an intent — "intent in, manifestation out".
-    /// **v0 floor:** a real model will compose a bespoke surface from the DSL here; until
-    /// then the steward manifests the canonical reference surface only when explicitly asked
-    /// to *show a surface*, so the renderer is exercised through the real turn pipeline
-    /// without pretending the heuristic can author one. (Same floor/model pattern as the
-    /// planner and the Brain compiler.)
-    fn manifest(&self, intent: &str) -> Option<Surface> {
+    /// Compose the generated surface for an intent — "intent in, manifestation out". With a
+    /// model wired, the steward composes a **bespoke** surface from the DSL (`surface::compose`);
+    /// the model returns an empty surface when none would help. Without a model, or if compose
+    /// fails, the floor manifests the canonical reference surface only when explicitly asked.
+    fn manifest(
+        &self,
+        model: Option<&hearth_model::HttpModel>,
+        intent: &str,
+        context: &str,
+    ) -> Option<Surface> {
+        if let Some(m) = model {
+            match surface::compose(m, intent, context) {
+                Ok(s) if !s.nodes.is_empty() => return Some(s),
+                Ok(_) => return None, // the model judged that no surface would help here
+                Err(e) => eprintln!("· surface compose failed ({e}); falling back to the floor"),
+            }
+        }
         if intent.to_lowercase().contains("surface") {
             Some(Surface::reference())
         } else {

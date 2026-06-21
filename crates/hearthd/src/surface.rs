@@ -9,10 +9,12 @@
 //!
 //! New components are added *here*, to the library — never emitted as free-form markup.
 
-use serde::Serialize;
+use anyhow::Result;
+use hearth_model::{Completion, Model};
+use serde::{Deserialize, Serialize};
 
 /// An ephemeral, intent-shaped interface the steward materialises for a task.
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Surface {
     /// Names the task (the session/window title), in the steward's voice.
     pub title: String,
@@ -22,13 +24,17 @@ pub struct Surface {
 
 /// One vetted component. Internally tagged (`{"node":"list", ...}`) so the shell can
 /// dispatch on a single field, and so an unknown node degrades safely (it is skipped).
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(tag = "node", rename_all = "snake_case")]
 pub enum Node {
     /// A section label — the system's quiet uppercase eyebrow.
     Heading { text: String },
     /// A paragraph. `voice` picks the typeface role (who is speaking).
-    Text { text: String, voice: Voice },
+    Text {
+        text: String,
+        #[serde(default)]
+        voice: Voice,
+    },
     /// A bulleted list.
     List { items: Vec<String> },
     /// Key/value rows — the glass-box "what is this" grammar (mono values).
@@ -39,39 +45,46 @@ pub enum Node {
     Actions { actions: Vec<Action> },
     /// An editable text field — the bidirectional seam: what the owner types here streams
     /// back to the steward as a structured edit (recorded through the privacy floor).
-    Note { label: String, value: String },
+    Note {
+        label: String,
+        #[serde(default)]
+        value: String,
+    },
     /// A hairline rule.
     Divider,
 }
 
 /// Who is speaking, encoded in the typeface (UI-SOUL tenet 9): the steward's warm serif,
 /// the system's clean sans, or mono for code/data.
-#[derive(Serialize, Clone, Copy)]
+#[derive(Serialize, Deserialize, Clone, Copy, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum Voice {
     Steward,
+    #[default]
     System,
     Data,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Field {
     pub key: String,
     pub value: String,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Tile {
     pub title: String,
+    #[serde(default)]
     pub caption: String,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Action {
     pub label: String,
     /// The intent this button hands back to the steward when pressed.
     pub intent: String,
     /// Render as the warm primary action (vs. a quiet link).
+    #[serde(default)]
     pub primary: bool,
 }
 
@@ -136,5 +149,74 @@ impl Surface {
                 },
             ],
         }
+    }
+
+    /// Parse a model's reply into a Surface, **leniently**: tolerate prose or markdown fences
+    /// around the JSON, and silently drop any node that isn't part of the vetted grammar. The
+    /// model can only *compose from* the library — it can never widen it or inject anything the
+    /// renderer doesn't already understand. A total parse failure yields an empty surface.
+    pub fn from_model_json(raw: &str) -> Self {
+        #[derive(Deserialize)]
+        struct Raw {
+            #[serde(default)]
+            title: String,
+            #[serde(default)]
+            nodes: Vec<serde_json::Value>,
+        }
+        let json = extract_json(raw);
+        let r: Raw =
+            serde_json::from_str(&json).unwrap_or(Raw { title: String::new(), nodes: vec![] });
+        let nodes = r.nodes.into_iter().filter_map(|v| serde_json::from_value::<Node>(v).ok()).collect();
+        Surface { title: r.title, nodes }
+    }
+}
+
+/// The system prompt the model composes against — the vetted grammar, described.
+const COMPOSER_SYSTEM: &str = "\
+You are the Hearth steward's surface composer. You turn the owner's request into a SURFACE — a \
+small, calm interface — by emitting a JSON object drawn from a FIXED component grammar. You never \
+write code, HTML, or anything outside this grammar.\n\n\
+Output ONLY one JSON object — no prose, no markdown fences:\n\
+{\"title\":\"<short title, in your voice>\",\"nodes\":[ ... ]}\n\n\
+Each node is exactly one of:\n\
+{\"node\":\"heading\",\"text\":\"...\"}\n\
+{\"node\":\"text\",\"text\":\"...\",\"voice\":\"steward|system|data\"}  (steward=warm/you, system=neutral, data=mono)\n\
+{\"node\":\"list\",\"items\":[\"...\"]}\n\
+{\"node\":\"fields\",\"rows\":[{\"key\":\"...\",\"value\":\"...\"}]}\n\
+{\"node\":\"tiles\",\"tiles\":[{\"title\":\"...\",\"caption\":\"...\"}]}\n\
+{\"node\":\"actions\",\"actions\":[{\"label\":\"...\",\"intent\":\"...\",\"primary\":true}]}  (pressing a button sends \"intent\" back to you)\n\
+{\"node\":\"note\",\"label\":\"...\",\"value\":\"\"}  (an editable field the owner can write in)\n\
+{\"node\":\"divider\"}\n\n\
+Rules:\n\
+- Compose the SMALLEST surface that genuinely helps. Calm, never cluttered.\n\
+- Use only real content you were given; do not invent specific facts, numbers, or filenames.\n\
+- An action's \"intent\" is a natural-language request you could act on next.\n\
+- If no surface would help (a plain acknowledgement is enough), output {\"title\":\"\",\"nodes\":[]}.";
+
+/// Compose a bespoke surface for an intent by having the model emit the DSL. The model picks
+/// from the vetted grammar (that is the security boundary); [`Surface::from_model_json`] parses
+/// it leniently, so a stray or unknown node can never break the manifestation.
+pub fn compose(model: &dyn Model, intent: &str, context: &str) -> Result<Surface> {
+    let prompt = format!(
+        "The owner's request:\n{intent}\n\nWhat you know / what just happened:\n{context}\n\nCompose the surface now — JSON only.",
+    );
+    let mut req = Completion::new(COMPOSER_SYSTEM, prompt);
+    req.temperature = 0.35;
+    req.max_tokens = 1100;
+    let raw = model.complete(&req)?;
+    Ok(Surface::from_model_json(&raw))
+}
+
+/// Pull the JSON object out of a reply that may carry markdown fences or stray prose.
+fn extract_json(raw: &str) -> String {
+    let s = raw
+        .trim()
+        .trim_start_matches("```json")
+        .trim_start_matches("```")
+        .trim_end_matches("```")
+        .trim();
+    match (s.find('{'), s.rfind('}')) {
+        (Some(a), Some(b)) if b > a => s[a..=b].to_string(),
+        _ => s.to_string(),
     }
 }
