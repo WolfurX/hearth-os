@@ -77,12 +77,20 @@
   .bar input{flex:1;background:transparent;border:0;outline:0;color:var(--ink);font-family:inherit;font-size:15px;padding:11px 0}
   .bar input::placeholder{color:var(--faint)}
   /* persistent contact bar — the centre stays clean for the user's wallpaper */
-  .intent.combar{left:0;right:0;bottom:0;top:auto;width:auto;transform:none;z-index:200;height:58px;padding:0 16px;flex-direction:row;align-items:center;justify-content:center;gap:11px;background:rgba(7,10,18,.82);backdrop-filter:blur(20px) saturate(130%);-webkit-backdrop-filter:blur(20px) saturate(130%);border-top:1px solid var(--line)}
-  .intent.combar .chips{position:absolute;bottom:70px;left:50%;transform:translateX(-50%);max-width:92vw}
-  .combar-row{display:flex;align-items:center;gap:11px;width:min(740px,94vw)}
-  .combar-row .presence.sm{width:22px;height:22px;flex:none;cursor:pointer}
-  .combar-row .presence.sm .core{box-shadow:0 0 20px 5px rgba(244,162,89,.4)}
-  .combar-row .bar{flex:1}
+  /* minimalist persistent bar: a hairline, a breathing ember, a borderless line */
+  .intent.combar{left:0;right:0;bottom:0;top:auto;width:auto;transform:none;z-index:200;height:58px;padding:0 22px;flex-direction:row;align-items:center;justify-content:center;gap:0;background:linear-gradient(to top,rgba(6,8,14,.72),rgba(6,8,14,.20));backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-top:1px solid rgba(255,255,255,.05);transition:border-color .3s}
+  .intent.combar:focus-within{border-top-color:rgba(244,162,89,.36)}
+  .combar-row{display:flex;align-items:center;gap:13px;width:min(680px,92vw)}
+  .combar-row .presence.sm{width:14px;height:14px;flex:none;cursor:pointer}
+  .combar-row .presence.sm .halo{display:none}
+  .combar-row .presence.sm .core{box-shadow:0 0 12px 3px rgba(244,162,89,.42)}
+  .combar-row .bar{flex:1;display:flex;align-items:center;gap:4px;background:transparent;border:0;border-radius:0;padding:0;box-shadow:none;backdrop-filter:none}
+  .combar-row .bar input{flex:1;background:transparent;border:0;outline:0;color:var(--ink);font-family:inherit;font-size:14.5px;padding:0}
+  .combar-row .bar input::placeholder{color:var(--faint)}
+  .combar-row .bar .ib{width:30px;height:30px;border:0;border-radius:8px;background:transparent;box-shadow:none;color:var(--faint);font-size:15px}
+  .combar-row .bar .ib:hover{color:var(--warm);background:rgba(244,162,89,.08)}
+  .combar-row .bar .ib.send{color:var(--warm)}
+  .combar-row .bar .ib.send:hover{background:rgba(244,162,89,.12)}
   .ib{width:40px;height:40px;border-radius:12px;border:1px solid var(--line);background:rgba(255,255,255,.04);color:var(--muted);cursor:pointer;font-size:15px;display:grid;place-items:center;transition:.15s;flex:none}
   .ib:hover{color:var(--warm);border-color:rgba(244,162,89,.5)}
   .ib.send{background:radial-gradient(circle at 38% 30%,var(--warm-hot),var(--warm) 70%);color:#2a1708;border:0;box-shadow:0 0 22px rgba(244,162,89,.4)}
@@ -308,17 +316,9 @@
     </div>
 
     <div class="intent combar" id="intent">
-      <div class="chips" id="chips">
-        <button class="chip" data-i="japan">shared album from Japan</button>
-        <button class="chip" data-i="disk">tidy my disk</button>
-        <button class="chip" data-i="mail">draft the urgent replies</button>
-        <button class="chip" data-i="brain">what do you know about me?</button>
-        <button class="chip" data-i="evening">the day's review</button>
-        <button class="chip" data-i="browser">open a web page</button>
-      </div>
       <div class="combar-row">
         <div class="presence sm" id="presence"><span class="halo"></span><span class="core"></span></div>
-        <div class="bar"><input id="say" placeholder="Speak, or type anything…   (or press /)" aria-label="intent" /><button class="ib" id="mic">🎙</button><button class="ib send" id="send">→</button></div>
+        <div class="bar"><input id="say" placeholder="Speak, or type anything…" aria-label="intent" /><button class="ib" id="mic">🎙</button><button class="ib send" id="send">→</button></div>
       </div>
     </div>
 
