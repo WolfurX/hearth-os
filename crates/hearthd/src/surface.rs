@@ -50,6 +50,42 @@ pub enum Node {
         #[serde(default)]
         value: String,
     },
+    /// A still image the shell displays from its path. The bytes never pass through the model —
+    /// the steward references the file; the shell renders it.
+    Image {
+        path: String,
+        #[serde(default)]
+        caption: String,
+    },
+    /// An audio file the shell plays with transport controls. The fields are presentation the
+    /// steward gathered (e.g. from `fs.stat`); the audio itself is referenced, never carried.
+    Audio {
+        path: String,
+        #[serde(default)]
+        title: String,
+        #[serde(default)]
+        artist: String,
+        #[serde(default)]
+        duration: String,
+    },
+    /// A video the shell plays. Referenced by path — the steward never ingests the stream; the
+    /// shell's media pipeline decodes and the surface just describes it.
+    Video {
+        path: String,
+        #[serde(default)]
+        title: String,
+        #[serde(default)]
+        duration: String,
+    },
+    /// A document the shell renders from its path (PDF, rich text, …). `excerpt` optionally
+    /// previews or highlights the relevant passage — e.g. for "the doc that contained X".
+    Document {
+        path: String,
+        #[serde(default)]
+        title: String,
+        #[serde(default)]
+        excerpt: String,
+    },
     /// A hairline rule.
     Divider,
 }
@@ -89,7 +125,8 @@ pub struct Action {
 }
 
 impl Surface {
-    /// The canonical **reference surface** — it exercises every node in the library. It is
+    /// The canonical **reference surface** — it exercises the core text-and-data nodes (media
+    /// nodes reference real files, so they belong to live manifestations, not this fixture). It is
     /// the grammar made tangible: the example a model composes against, the renderer's
     /// fixture, and (until a model is wired) what the steward manifests when asked to show a
     /// surface. Real data and real intents, composed from the vetted vocabulary — no raw code.
@@ -186,9 +223,14 @@ Each node is exactly one of:\n\
 {\"node\":\"tiles\",\"tiles\":[{\"title\":\"...\",\"caption\":\"...\"}]}\n\
 {\"node\":\"actions\",\"actions\":[{\"label\":\"...\",\"intent\":\"...\",\"primary\":true}]}  (pressing a button sends \"intent\" back to you)\n\
 {\"node\":\"note\",\"label\":\"...\",\"value\":\"\"}  (an editable field the owner can write in)\n\
+{\"node\":\"image\",\"path\":\"/abs/path\",\"caption\":\"...\"}  (the shell shows the image)\n\
+{\"node\":\"audio\",\"path\":\"/abs/path\",\"title\":\"...\",\"artist\":\"...\",\"duration\":\"3:24\"}  (the shell plays it with transport controls)\n\
+{\"node\":\"video\",\"path\":\"/abs/path\",\"title\":\"...\",\"duration\":\"1:30\"}  (the shell plays it)\n\
+{\"node\":\"document\",\"path\":\"/abs/path\",\"title\":\"...\",\"excerpt\":\"...\"}  (the shell renders the document; excerpt previews the relevant passage)\n\
 {\"node\":\"divider\"}\n\n\
 Rules:\n\
 - Compose the SMALLEST surface that genuinely helps. Calm, never cluttered.\n\
+- For media (image/audio/video/document), reference the file by its real path — NEVER paste file bytes or contents; the shell renders or plays it. Use only details you actually have (e.g. from fs.stat).\n\
 - Use only real content you were given; do not invent specific facts, numbers, or filenames.\n\
 - An action's \"intent\" is a natural-language request you could act on next.\n\
 - If no surface would help (a plain acknowledgement is enough), output {\"title\":\"\",\"nodes\":[]}.";
