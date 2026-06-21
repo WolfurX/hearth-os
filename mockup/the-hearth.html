@@ -221,16 +221,16 @@
 
   /* window management: attention depths — ambient ⇄ "taking the room" (immersive).
      the steward recedes the rest; no taskbar, no tiling, no manual window-pushing. */
-  .win.focused{position:fixed;left:50%;top:46px;transform:translateX(-50%);width:min(1080px,94vw)!important;height:calc(100vh - 88px);z-index:60;display:flex;flex-direction:column;overflow:hidden}
+  .win.focused{position:fixed;left:0;right:0;top:46px;margin-inline:auto;transform:none!important;width:min(1080px,94vw)!important;height:calc(100vh - 88px);z-index:60;display:flex;flex-direction:column;overflow:hidden}
   .win.focused .winbody{flex:1;min-height:0;overflow:hidden}
   .win.focused .viewport{max-height:62vh}
   /* literal full screen — for sinking into one task */
-  .win.full{position:fixed!important;inset:0!important;left:0!important;top:0!important;transform:none!important;width:100vw!important;height:100vh!important;max-width:none;border:0;border-radius:0;z-index:60;display:flex;flex-direction:column;overflow:hidden}
+  .win.full{position:fixed!important;inset:0!important;left:0!important;right:0!important;top:0!important;bottom:0!important;margin:0!important;transform:none!important;width:100vw!important;height:100vh!important;max-width:none;border:0;border-radius:0;z-index:60;display:flex;flex-direction:column;overflow:hidden}
   .win.full .winbody{flex:1;min-height:0;overflow:hidden}
   .win.full .viewport{max-height:82vh}
   /* enlarged states: let the thread fill so the type box sits at the bottom, not stranded mid-panel */
   .win.focused .thread,.win.full .thread{max-height:none}
-  body.focusing .win:not(.focused){opacity:.10;filter:blur(3px);transform:scale(.94);pointer-events:none;transition:.5s}
+  body.focusing .win:not(.focused):not(.full){opacity:.10;filter:blur(3px);transform:scale(.94);pointer-events:none;transition:.5s}
   body.focusing .hearth,body.focusing .intent,body.focusing .feed,body.focusing .status,body.focusing .corner,body.focusing .dock{opacity:.18;filter:blur(2px);pointer-events:none;transition:.5s}
   .backpill{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:70;display:none;align-items:center;gap:9px;font-family:inherit;font-size:12.5px;color:var(--warm);background:var(--glass-2);border:1px solid rgba(244,162,89,.3);border-radius:999px;padding:7px 16px;cursor:pointer;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
   .backpill.show{display:inline-flex} .backpill:hover{background:rgba(244,162,89,.16)}
@@ -567,7 +567,7 @@ function setSize(w,size){
   document.querySelectorAll('.win.focused,.win.full').forEach(x=>{ if(x!==w){ x.classList.remove('focused','full'); restoreBox(x); const bb=x.querySelector('[data-focus]'); if(bb){bb.textContent='⤢';bb.title='enlarge';} } });
   w.classList.remove('focused','full');
   if(size==='small'){ restoreBox(w); }
-  else { if(!w._box) w._box={left:w.style.left,top:w.style.top,width:w.style.width}; w.style.left='';w.style.top='';w.style.width=''; w.classList.add(size==='full'?'full':'focused'); }
+  else { if(!w._box) w._box={left:w.style.left,top:w.style.top,width:w.style.width}; w.style.left='';w.style.top='';w.style.width=''; try{w.getAnimations().forEach(a=>a.cancel());}catch(e){} w.classList.add(size==='full'?'full':'focused'); }
   const immersive = size!=='small';
   document.body.classList.toggle('focusing', immersive);
   backpill.classList.toggle('show', immersive);
