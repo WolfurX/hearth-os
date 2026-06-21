@@ -39,7 +39,7 @@ impl Default for Registry {
             tools: vec![
                 ToolSpec { cap: "respond", tool: "say", args: "{ text }", about: "Answer the owner in plain words (no side effects).", policy: Decision::Auto, mutating: false },
                 ToolSpec { cap: "brain", tool: "recall", args: "{ query }", about: "Look up what is known about the owner.", policy: Decision::Auto, mutating: false },
-                ToolSpec { cap: "brain", tool: "remember", args: "{ text }", about: "Write a fact or preference the owner explicitly asked you to keep.", policy: Decision::Ask, mutating: true },
+                ToolSpec { cap: "brain", tool: "remember", args: "{ text }", about: "Write a fact or preference the owner asked you to keep (legible, undoable).", policy: Decision::Auto, mutating: true },
                 ToolSpec { cap: "brain", tool: "note", args: "{ text }", about: "Note something you've learned about the owner or the system on your own — folded into your memory.", policy: Decision::Auto, mutating: true },
                 ToolSpec { cap: "workspace", tool: "list", args: "{ path? }", about: "List files in your own workspace.", policy: Decision::Auto, mutating: false },
                 ToolSpec { cap: "workspace", tool: "read", args: "{ path }", about: "Read a file from your workspace.", policy: Decision::Auto, mutating: false },
