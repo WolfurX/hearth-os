@@ -249,6 +249,8 @@
   .gb-why{color:var(--muted);font-family:var(--serif);font-style:italic}
   .gb-res{font-family:var(--mono);font-size:11px;color:var(--muted);background:rgba(0,0,0,.2);border:1px solid var(--line);border-radius:8px;padding:7px 9px;white-space:pre-wrap;word-break:break-word;max-height:46vh;overflow:auto}
   .amsg.err{color:var(--warn);background:rgba(232,192,105,.06);border-color:rgba(232,192,105,.22);font-family:var(--sans)}
+  .bloading{font-family:var(--serif);font-style:italic;color:var(--faint);font-size:13px;padding:6px 4px}
+  .bul.ro{cursor:default}.bul.ro:hover{background:none;color:var(--muted)}
 </style>
 </head>
 <body>
@@ -417,9 +419,26 @@ function bMail(){const ds=[['the landlord','lease renewal',`Thanks for the terms
   <div class="done"><div class="big">Sent — all three are on their way.</div></div>`;}
 const brain={'you':{t:'You',b:['Prefers concise, direct replies','“Tidy up” means group by type — never delete']},'rhythms':{t:'Rhythms',b:['Morning review of projects around 9am']},
   'people/mom':{t:'Mom',b:['Birthday in March; likes tulips']},'projects/hearth-os':{t:'Hearth OS',b:['Agentic Arch-Linux OS where the AI is the primary interface']},'lessons/wifi':{t:'Lesson · Wifi',b:['After a kernel update, rebuild rtl8821ce before reconnecting wifi']}};
-function bBrain(){const cards=Object.keys(brain).map(k=>{const p=brain[k];const buls=p.b.map((x,i)=>`<div class="bul" data-k="${k}" data-i="${i}">${x}</div>`).join('');
+function bBrain(){
+  // live mode reads the real Brain over /api/brain; the scripted cards below are the file:// demo.
+  if(LIVE)return `<span class="made">Everything I've learned — in plain words you can read or forget.</span><div class="face" data-brainlive><div class="bloading">gathering your pages…</div></div>`;
+  const cards=Object.keys(brain).map(k=>{const p=brain[k];const buls=p.b.map((x,i)=>`<div class="bul" data-k="${k}" data-i="${i}">${x}</div>`).join('');
   return `<div class="bcard" data-card="${k}"><div class="bh"><span class="bt">${p.t}</span><span class="bacts"><button data-forget="${k}">forget</button></span></div>${buls}</div>`;}).join('');
   return `<span class="made">Everything I've learned — in plain words you can edit or forget.</span><div class="face">${cards}<div class="acted" style="margin-top:6px"><span class="m">🧠</span><div style="font-size:12px;color:var(--faint)">Compiled from your activity — plain text, so it stays with you across model swaps.</div></div></div>`;}
+/* ---- live Brain: real curated pages, and an honest forget (snapshot-first, undoable) ---- */
+function prettyPage(name){const leaf=name.split('/').pop().replace(/[-_]/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+  if(!name.includes('/'))return leaf;const cat=name.split('/')[0].replace(/s$/,'').replace(/\b\w/g,c=>c.toUpperCase());return cat+' · '+leaf;}
+function brainCardLive(name,bullets){const buls=(bullets&&bullets.length?bullets:['(nothing here yet)']).map(x=>`<div class="bul ro">${escapeHtml(x)}</div>`).join('');
+  return `<div class="bcard" data-card="${escapeHtml(name)}"><div class="bh"><span class="bt">${escapeHtml(prettyPage(name))}</span><span class="bacts"><button data-lforget="${escapeHtml(name)}">forget</button></span></div>${buls}</div>`;}
+async function renderBrainLive(w){const face=w.querySelector('[data-brainlive]');if(!face||face.dataset.loaded)return;face.dataset.loaded='1';
+  let pages;try{pages=await api('/api/brain');}catch(e){face.dataset.loaded='';face.innerHTML='<div class="bloading" style="color:var(--warn)">Couldn\'t reach the Brain — '+escapeHtml(e.message)+'</div>';return;}
+  if(!pages.length){face.innerHTML='<div class="bloading">The Brain is empty — tell me something to remember.</div>';return;}
+  face.innerHTML=pages.map(p=>brainCardLive(p.name,p.bullets)).join('')+'<div class="acted" style="margin-top:6px"><span class="m">🧠</span><div style="font-size:12px;color:var(--faint)">Read live from your Brain — plain text, so it stays with you across model swaps.</div></div>';
+  wireBrainLive(w);}
+function wireBrainLive(w){w.querySelectorAll('[data-lforget]').forEach(b=>b.onclick=async()=>{const page=b.dataset.lforget,leaf=page.split('/').pop();b.disabled=true;b.textContent='…';
+  try{const r=await api('/api/forget',{page});const card=w.querySelector(`[data-card="${page}"]`);card&&card.classList.add('forgotten');pulse();
+    toast(r.removed?`Forgot “${leaf}” — page gone, ${r.redacted} raw note${r.redacted===1?'':'s'} redacted. Reversible with hearthd undo.`:`No page “${leaf}” to forget.`);}
+  catch(e){b.disabled=false;b.textContent='forget';toast("Couldn't forget that — "+e.message);}});}
 function bEvening(){const dm=[['Security updates',2],['Tidying files',1],['Email',0]];const L=['Ask first','Act & report','Just handle it'];
   const trust=dm.map((d,di)=>`<div class="trow"><span class="dn">${d[0]}</span><span class="seg3" data-dom="${di}">${L.map((l,li)=>`<button data-li="${li}" class="${li===d[1]?'on':''}">${l}</button>`).join('')}</span></div>`).join('');
   return `<span class="made">Here's the day, and what I learned.</span><div class="face">
@@ -562,6 +581,7 @@ function wire(w,kind){
   // brain
   w.querySelectorAll('.bul').forEach(bul=>{bul.onclick=()=>{bul.contentEditable='true';bul.focus();};bul.onblur=()=>{bul.contentEditable='false';if(brain[bul.dataset.k])brain[bul.dataset.k].b[+bul.dataset.i]=bul.textContent.trim();};bul.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();bul.blur();}};});
   w.querySelectorAll('[data-forget]').forEach(b=>b.onclick=()=>{const k=b.dataset.forget;const card=w.querySelector(`[data-card="${k}"]`);card.classList.add('forgotten');delete brain[k];pulse();toast(`Forgot “${(b.dataset.forget||'').split('/').pop()}” — page gone, raw notes redacted.`);});
+  if(LIVE&&w.querySelector('[data-brainlive]'))renderBrainLive(w);
   // trust dial
   w.querySelectorAll('.seg3').forEach(seg=>seg.querySelectorAll('button').forEach(btn=>btn.onclick=()=>{seg.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===btn));attend(.3);toast('Autonomy updated.');}));
   // browser — engine renders the page; the chrome and mediation are the Hearth's

@@ -216,6 +216,25 @@ impl Hearthd {
         }
         Ok(out)
     }
+
+    /// Forget a curated page — the glass box, made reversible. Snapshots the Brain first
+    /// (so `hearthd undo` reverts it), removes the page, and redacts the raw-log entries
+    /// that fed it. The wiki's own git history still retains the prior state for audit.
+    pub fn forget(&self, page: &str) -> Result<ForgetResult> {
+        let page = page.to_string();
+        let wiki_dir = self.brain.wiki_dir();
+        let log_path = self.brain.log_path();
+        let root = self.brain.root.clone();
+        let (snapshot, (removed, redacted)) =
+            self.substrate.transact(&format!("forget {page}"), || {
+                let removed = hearth_brain::wiki::remove(&wiki_dir, &page)?;
+                let subject = page.rsplit('/').next().unwrap_or(&page).replace('-', " ");
+                let redacted = hearth_brain::log::redact(&log_path, &subject)?;
+                hearth_brain::gitstore::commit_all(&root, &format!("brain: forget {page}"))?;
+                Ok((removed, redacted))
+            })?;
+        Ok(ForgetResult { page, removed, redacted, snapshot })
+    }
 }
 
 /// The result of one turn — what the steward recalled, planned, and did.
@@ -242,4 +261,14 @@ pub struct StepResult {
 pub struct BrainPage {
     pub name: String,
     pub bullets: Vec<String>,
+}
+
+/// The outcome of forgetting a page: whether it existed, how many raw entries were
+/// redacted, and the snapshot id that makes it undoable.
+#[derive(serde::Serialize)]
+pub struct ForgetResult {
+    pub page: String,
+    pub removed: bool,
+    pub redacted: usize,
+    pub snapshot: u64,
 }

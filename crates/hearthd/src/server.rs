@@ -6,6 +6,7 @@
 //! - `GET  /`            → the UI (so the shell and the API are same-origin)
 //! - `POST /api/intent`  → run one turn (`{intent, approve}`) → the structured result
 //! - `GET  /api/brain`   → the Brain's curated pages ("what do you know about me?")
+//! - `POST /api/forget`  → forget a curated page (`{page}`) → snapshot-first, undoable
 //!
 //! Single-threaded by design: one owner, one steward, requests handled in order.
 
@@ -113,6 +114,15 @@ fn respond(
             ),
         },
         ("GET", "/api/brain") => json_result(h.brain_pages()),
+        ("POST", "/api/forget") => {
+            let v: serde_json::Value =
+                serde_json::from_slice(body).unwrap_or_else(|_| serde_json::json!({}));
+            let page = v.get("page").and_then(|x| x.as_str()).unwrap_or("").trim().to_string();
+            if page.is_empty() {
+                return ("400 Bad Request", "application/json", br#"{"error":"no page"}"#.to_vec());
+            }
+            json_result(h.forget(&page))
+        }
         ("POST", "/api/intent") => {
             let v: serde_json::Value =
                 serde_json::from_slice(body).unwrap_or_else(|_| serde_json::json!({}));
