@@ -206,6 +206,11 @@
   .layer.on{display:flex}
   .layer .x2{position:absolute;top:20px;right:24px}
   .transcript{max-width:540px;background:var(--glass);border:1px solid var(--line);border-radius:16px;padding:18px;font-family:var(--serif);font-size:16px;line-height:1.8;backdrop-filter:blur(10px)}
+  /* first contact, everywhere — above any task, even fullscreen */
+  .layer.summon{z-index:90;gap:16px}
+  .summon-greet{font-family:var(--serif);font-style:italic;font-size:21px;color:var(--ink)}
+  #summon .chips{display:flex;justify-content:center;flex-wrap:wrap;gap:8px;max-width:560px}
+  #presence{cursor:pointer}
   .transcript .me{color:var(--muted)} .vchips{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
   .vchip{border:1px solid var(--line);background:var(--glass);border-radius:999px;padding:9px 16px;font-size:14px;color:var(--ink);cursor:pointer;font-family:var(--serif)}.vchip:hover{border-color:rgba(244,162,89,.5);color:var(--warm)}
   .lede{font-family:var(--serif);font-weight:340;font-size:clamp(18px,2.4vw,23px);line-height:1.5;max-width:30ch;color:var(--ink)}
@@ -325,6 +330,19 @@
     <div class="sub" id="vstate">listening…</div>
     <div class="transcript"><div class="me">you said: “how's my disk doing — clean it if it's full”</div><div id="vai" style="margin-top:9px">“You're at 78%. The biggest thing is 40&nbsp;GB of old build caches — safe to clear. Want me to?”</div></div>
     <div class="vchips"><button class="vchip" id="vYes">“yes, clear it”</button><button class="vchip" id="vNo">“not now”</button><button class="vchip" data-closelayer="voice">close</button></div>
+  </div>
+
+  <!-- first contact: summon the steward from anywhere (/, Ctrl/⌘-K, or tap the ember) -->
+  <div class="layer summon" id="summon">
+    <div class="presence" style="width:40px;height:40px"><span class="halo"></span><span class="core"></span></div>
+    <div class="summon-greet">What do you need?</div>
+    <div class="bar" style="width:min(640px,92vw)"><input id="say2" placeholder="Speak, or type anything…   (esc to close)" aria-label="intent" /><button class="ib" id="mic2">🎙</button><button class="ib send" id="send2">→</button></div>
+    <div class="chips" id="chips2">
+      <button class="chip" data-i="disk">tidy my disk</button>
+      <button class="chip" data-i="brain">what do you know about me?</button>
+      <button class="chip" data-i="browser">open a web page</button>
+      <button class="chip" data-i="evening">the day's review</button>
+    </div>
   </div>
 
   <!-- first boot: a moment, over the field -->
@@ -579,7 +597,7 @@ function cycleSize(w){ const cur=w.classList.contains('full')?'full':w.classList
 function focusSurface(w){ setSize(w,'big'); }
 function unfocus(){ document.querySelectorAll('.win.focused,.win.full').forEach(x=>setSize(x,'small')); }
 backpill.onclick=unfocus;
-document.addEventListener('keydown',e=>{ if(e.key==='Escape') unfocus(); });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ if($('#summon').classList.contains('on')) closeSummon(); else unfocus(); } });
 function summon(kind,opts){opts=opts||{};
   if(kind==='voice'){openLayer('voice');return;}
   const build=BUILD[kind];if(!build){toast('I can shape that — try a suggestion for now.');return;}
@@ -780,9 +798,22 @@ function route(raw){ if(!raw||!raw.trim()) return; const v=raw.toLowerCase();
 $('#send').onclick=()=>{route(say.value);say.value='';};
 say.addEventListener('keydown',e=>{if(e.key==='Enter'){route(say.value);say.value='';}});
 say.addEventListener('focus',()=>intent.classList.add('show-chips'));
-document.addEventListener('keydown',e=>{const a=document.activeElement;if(e.key==='/'&&a!==say&&!/input|textarea/i.test(a.tagName)&&!a.isContentEditable){e.preventDefault();say.focus();}});
+document.addEventListener('keydown',e=>{const a=document.activeElement;const typing=/input|textarea/i.test(a.tagName)||a.isContentEditable;
+  if(!typing && (e.key==='/' || ((e.metaKey||e.ctrlKey)&&(e.key==='k'||e.key==='K')))){e.preventDefault();openSummon();}});
 $('#mic').onclick=()=>openLayer('voice');
 intent.classList.add('show-chips');
+
+/* ---------- first contact: summon the steward from anywhere (/, Ctrl/⌘-K, tap the ember) ---------- */
+const say2=$('#say2');
+function openSummon(){ $('#summon').classList.add('on'); pulse(); setTimeout(()=>say2&&say2.focus(),30); }
+function closeSummon(){ $('#summon').classList.remove('on'); }
+function summonRoute(v){ const t=(v||'').trim(); if(!t) return; closeSummon(); route(t); }
+$('#send2').onclick=()=>{ summonRoute(say2.value); say2.value=''; };
+say2.addEventListener('keydown',e=>{ if(e.key==='Enter'){ summonRoute(say2.value); say2.value=''; } else if(e.key==='Escape'){ closeSummon(); } });
+$('#mic2').onclick=()=>{ closeSummon(); openLayer('voice'); };
+$$('#chips2 .chip').forEach(c=>c.onclick=()=>{ closeSummon(); summon(c.dataset.i); });
+$('#presence').onclick=openSummon;
+$('#summon').addEventListener('click',e=>{ if(e.target.id==='summon') closeSummon(); });
 
 /* customization: talk the room warmer/cooler */
 $('#warmer').onclick=()=>{window.__warm=Math.min(1.4,(window.__warm||0)+0.35);pulse();toast('Warmer — nudged the light toward the ember.');};
