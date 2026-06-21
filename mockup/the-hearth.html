@@ -76,6 +76,13 @@
   .bar:focus-within{border-color:rgba(244,162,89,.5)}
   .bar input{flex:1;background:transparent;border:0;outline:0;color:var(--ink);font-family:inherit;font-size:15px;padding:11px 0}
   .bar input::placeholder{color:var(--faint)}
+  /* persistent contact bar — the centre stays clean for the user's wallpaper */
+  .intent.combar{left:0;right:0;bottom:0;width:auto;transform:none;z-index:999;gap:9px;padding:13px 16px 15px;background:linear-gradient(to top,rgba(5,7,13,.9) 35%,rgba(5,7,13,0));backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);pointer-events:none}
+  .intent.combar>*{pointer-events:auto}
+  .combar-row{display:flex;align-items:center;gap:11px;width:min(740px,94vw)}
+  .combar-row .presence.sm{width:22px;height:22px;flex:none;cursor:pointer}
+  .combar-row .presence.sm .core{box-shadow:0 0 20px 5px rgba(244,162,89,.4)}
+  .combar-row .bar{flex:1}
   .ib{width:40px;height:40px;border-radius:12px;border:1px solid var(--line);background:rgba(255,255,255,.04);color:var(--muted);cursor:pointer;font-size:15px;display:grid;place-items:center;transition:.15s;flex:none}
   .ib:hover{color:var(--warm);border-color:rgba(244,162,89,.5)}
   .ib.send{background:radial-gradient(circle at 38% 30%,var(--warm-hot),var(--warm) 70%);color:#2a1708;border:0;box-shadow:0 0 22px rgba(244,162,89,.4)}
@@ -303,12 +310,7 @@
       <span class="heart" title="all well"></span>
     </div>
 
-    <div class="hearth">
-      <div class="presence" id="presence"><span class="halo"></span><span class="halo b"></span><span class="core"></span></div>
-      <div class="hline" id="hline">Good evening.<span class="soft"> The house is quiet — I've been tending a few things.</span></div>
-    </div>
-
-    <div class="intent" id="intent">
+    <div class="intent combar" id="intent">
       <div class="chips" id="chips">
         <button class="chip" data-i="japan">shared album from Japan</button>
         <button class="chip" data-i="disk">tidy my disk</button>
@@ -317,7 +319,10 @@
         <button class="chip" data-i="evening">the day's review</button>
         <button class="chip" data-i="browser">open a web page</button>
       </div>
-      <div class="bar"><input id="say" placeholder="Speak, or type anything…   (press / )" aria-label="intent" /><button class="ib" id="mic">🎙</button><button class="ib send" id="send">→</button></div>
+      <div class="combar-row">
+        <div class="presence sm" id="presence" title="tap to speak — or press /"><span class="halo"></span><span class="core"></span></div>
+        <div class="bar"><input id="say" placeholder="Speak, or type anything…   (or press /)" aria-label="intent" /><button class="ib" id="mic">🎙</button><button class="ib send" id="send">→</button></div>
+      </div>
     </div>
 
     <div class="dock" id="dock"></div>
