@@ -135,75 +135,116 @@ impl Hearthd {
         let full_system =
             format!("{system}\n\nWhat you already know about the owner (from memory):\n{known}");
 
-        // plan — a real model if one is configured (HEARTH_MODEL_*), else the heuristic floor
+        // plan → act → observe → plan again: a bounded agentic loop. With a model the steward
+        // chains steps, *seeing each result before deciding the next*; the heuristic floor stays
+        // one-shot. The loop ends when the steward gives its final answer (respond.say), needs
+        // the owner's approval, has nothing left to do, or hits the step ceiling.
         let model = hearth_model::HttpModel::from_env().ok();
-        let (planner, plan) = match &model {
-            Some(m) => match (ModelPlanner { model: m }).plan(intent, &full_system) {
-                Ok(p) => (m.id().to_string(), p),
-                Err(e) => {
-                    eprintln!("· model planner failed ({e}); falling back to the heuristic");
-                    ("heuristic".to_string(), HeuristicPlanner.plan(intent, &full_system)?)
-                }
-            },
-            None => ("heuristic".to_string(), HeuristicPlanner.plan(intent, &full_system)?),
-        };
-        emit(&StreamEvent::Plan { planner: &planner, summary: &plan.summary });
+        let max_iters = if model.is_some() { 5 } else { 1 };
+        let mut planner = "heuristic".to_string();
+        let mut summary = String::new();
+        let mut steps: Vec<StepResult> = vec![];
+        let mut transcript = String::new();
+        let mut paused = false;
 
-        // act — gated, snapshotted, audited; each completed step streams out at once
-        let mut steps = vec![];
-        for st in &plan.steps {
-            let (cap, tool, args) = (st.capability.as_str(), st.tool.as_str(), &st.args);
-            let decision = self.decide(cap, tool);
-            let mut sr = StepResult {
-                capability: cap.to_string(),
-                tool: tool.to_string(),
-                why: st.why.clone(),
-                decision: format!("{decision:?}").to_lowercase(),
-                ran: false,
-                snapshot: None,
-                result: None,
+        for iter in 0..max_iters {
+            // reason over the intent plus what's already happened this turn
+            let ask = if transcript.is_empty() {
+                intent.to_string()
+            } else {
+                format!(
+                    "{intent}\n\nWhat you've already done this turn (results included):\n{transcript}\n\
+                     Plan the next step(s). Do NOT repeat a tool call that already appears above — its \
+                     result is there to use. Use respond.say only for your final answer to the owner; \
+                     return an empty steps array if nothing more is needed."
+                )
             };
-            let run_it = !matches!(decision, Decision::Forbid)
-                && !(matches!(decision, Decision::Ask) && !approve);
-            if run_it {
-                if self.mutates(cap, tool) {
-                    let (txid, r) = self
-                        .substrate
-                        .transact(&format!("{cap}.{tool}"), || self.execute_tool(cap, tool, args))?;
-                    sr.snapshot = Some(txid);
-                    sr.result = Some(r);
-                } else {
-                    sr.result = Some(self.execute_tool(cap, tool, args)?);
-                }
-                sr.ran = true;
-                let _ = hearth_brain::log::append(
-                    &self.brain.log_path(),
-                    hearth_brain::log::Kind::Action,
-                    &format!("hearthd ran {cap}.{tool} {args}"),
-                    vec!["hearthd".into()],
-                );
+            let plan = match &model {
+                Some(m) => match (ModelPlanner { model: m }).plan(&ask, &full_system) {
+                    Ok(p) => {
+                        planner = m.id().to_string();
+                        p
+                    }
+                    Err(e) => {
+                        eprintln!("· model planner failed ({e}); falling back to the heuristic");
+                        planner = "heuristic".to_string();
+                        HeuristicPlanner.plan(intent, &full_system)?
+                    }
+                },
+                None => HeuristicPlanner.plan(intent, &full_system)?,
+            };
+            if iter == 0 {
+                summary = plan.summary.clone();
+                emit(&StreamEvent::Plan { planner: &planner, summary: &summary });
             }
-            emit(&StreamEvent::Step { step: &sr });
-            steps.push(sr);
+            if plan.steps.is_empty() {
+                break;
+            }
+
+            // act — gated, snapshotted, audited; each completed step streams out at once
+            let mut terminal = false;
+            for st in &plan.steps {
+                let (cap, tool, args) = (st.capability.as_str(), st.tool.as_str(), &st.args);
+                let decision = self.decide(cap, tool);
+                let mut sr = StepResult {
+                    capability: cap.to_string(),
+                    tool: tool.to_string(),
+                    why: st.why.clone(),
+                    decision: format!("{decision:?}").to_lowercase(),
+                    ran: false,
+                    snapshot: None,
+                    result: None,
+                };
+                let run_it = !matches!(decision, Decision::Forbid)
+                    && !(matches!(decision, Decision::Ask) && !approve);
+                if run_it {
+                    if self.mutates(cap, tool) {
+                        let (txid, r) = self
+                            .substrate
+                            .transact(&format!("{cap}.{tool}"), || self.execute_tool(cap, tool, args))?;
+                        sr.snapshot = Some(txid);
+                        sr.result = Some(r);
+                    } else {
+                        sr.result = Some(self.execute_tool(cap, tool, args)?);
+                    }
+                    sr.ran = true;
+                    let _ = hearth_brain::log::append(
+                        &self.brain.log_path(),
+                        hearth_brain::log::Kind::Action,
+                        &format!("hearthd ran {cap}.{tool} {args}"),
+                        vec!["hearthd".into()],
+                    );
+                    transcript.push_str(&format!("- {cap}.{tool} → {}\n", sr.result.as_deref().unwrap_or("")));
+                    if cap == "respond" && tool == "say" {
+                        terminal = true; // the steward has given its final answer
+                    }
+                } else if matches!(decision, Decision::Ask) {
+                    paused = true; // held for the owner's ok — the loop can't continue past this
+                }
+                emit(&StreamEvent::Step { step: &sr });
+                steps.push(sr);
+                if paused {
+                    break;
+                }
+            }
+            if terminal || paused {
+                break;
+            }
         }
 
         // manifestation out — a bespoke surface composed (by the model, from the DSL) for this intent
         let context = format!(
-            "recalled: {}\nsummary: {}\nresults:\n{}",
+            "recalled: {}\nsummary: {}\nwhat happened:\n{}",
             if recalled.is_empty() { "(nothing)".to_string() } else { recalled.join(", ") },
-            plan.summary,
-            steps
-                .iter()
-                .filter_map(|s| s.result.as_ref().map(|r| format!("- {}.{}: {}", s.capability, s.tool, r)))
-                .collect::<Vec<_>>()
-                .join("\n"),
+            summary,
+            if transcript.trim().is_empty() { "(nothing executed)".to_string() } else { transcript.clone() },
         );
         let surface = self.manifest(model.as_ref(), intent, &context);
         if let Some(s) = &surface {
             emit(&StreamEvent::Surface { surface: s });
         }
 
-        let result = TurnResult { recalled, planner, summary: plan.summary, steps };
+        let result = TurnResult { recalled, planner, summary, steps };
         emit(&StreamEvent::Done { result: &result });
         Ok(result)
     }
