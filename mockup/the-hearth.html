@@ -77,8 +77,8 @@
   .bar input{flex:1;background:transparent;border:0;outline:0;color:var(--ink);font-family:inherit;font-size:15px;padding:11px 0}
   .bar input::placeholder{color:var(--faint)}
   /* persistent contact bar — the centre stays clean for the user's wallpaper */
-  .intent.combar{left:0;right:0;bottom:0;width:auto;transform:none;z-index:999;gap:9px;padding:13px 16px 15px;background:linear-gradient(to top,rgba(5,7,13,.9) 35%,rgba(5,7,13,0));backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);pointer-events:none}
-  .intent.combar>*{pointer-events:auto}
+  .intent.combar{left:0;right:0;bottom:0;top:auto;width:auto;transform:none;z-index:200;height:58px;padding:0 16px;flex-direction:row;align-items:center;justify-content:center;gap:11px;background:rgba(7,10,18,.82);backdrop-filter:blur(20px) saturate(130%);-webkit-backdrop-filter:blur(20px) saturate(130%);border-top:1px solid var(--line)}
+  .intent.combar .chips{position:absolute;bottom:70px;left:50%;transform:translateX(-50%);max-width:92vw}
   .combar-row{display:flex;align-items:center;gap:11px;width:min(740px,94vw)}
   .combar-row .presence.sm{width:22px;height:22px;flex:none;cursor:pointer}
   .combar-row .presence.sm .core{box-shadow:0 0 20px 5px rgba(244,162,89,.4)}
@@ -234,20 +234,17 @@
 
   /* window management: attention depths — ambient ⇄ "taking the room" (immersive).
      the steward recedes the rest; no taskbar, no tiling, no manual window-pushing. */
-  .win.focused{position:fixed;left:0;right:0;top:46px;margin-inline:auto;transform:none!important;width:min(1080px,94vw)!important;height:calc(100vh - 88px);z-index:60;display:flex;flex-direction:column;overflow:hidden}
+  .win.focused{position:fixed;left:0;right:0;top:46px;margin-inline:auto;transform:none!important;width:min(1080px,94vw)!important;height:calc(100vh - 146px);z-index:60;display:flex;flex-direction:column;overflow:hidden}
   .win.focused .winbody{flex:1;min-height:0;overflow:hidden}
   .win.focused .viewport{max-height:62vh}
   /* literal full screen — for sinking into one task */
-  .win.full{position:fixed!important;inset:0!important;left:0!important;right:0!important;top:0!important;bottom:0!important;margin:0!important;transform:none!important;width:100vw!important;height:100vh!important;max-width:none;border:0;border-radius:0;z-index:60;display:flex;flex-direction:column;overflow:hidden}
+  .win.full{position:fixed!important;left:0!important;right:0!important;top:0!important;bottom:58px!important;margin:0!important;transform:none!important;width:100vw!important;height:calc(100vh - 58px)!important;max-width:none;border:0;border-radius:0;z-index:60;display:flex;flex-direction:column;overflow:hidden}
   .win.full .winbody{flex:1;min-height:0;overflow:hidden}
   .win.full .viewport{max-height:82vh}
   /* enlarged states: let the thread fill so the type box sits at the bottom, not stranded mid-panel */
   .win.focused .thread,.win.full .thread{max-height:none}
   body.focusing .win:not(.focused):not(.full){opacity:.10;filter:blur(3px);transform:scale(.94);pointer-events:none;transition:.5s}
-  body.focusing .hearth,body.focusing .intent,body.focusing .feed,body.focusing .status,body.focusing .corner,body.focusing .dock{opacity:.18;filter:blur(2px);pointer-events:none;transition:.5s}
-  .backpill{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:70;display:none;align-items:center;gap:9px;font-family:inherit;font-size:12.5px;color:var(--warm);background:var(--glass-2);border:1px solid rgba(244,162,89,.3);border-radius:999px;padding:7px 16px;cursor:pointer;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
-  .backpill.show{display:inline-flex} .backpill:hover{background:rgba(244,162,89,.16)}
-  .backpill .k{font-size:10px;color:var(--faint);border:1px solid var(--line);border-radius:5px;padding:1px 5px}
+  body.focusing .feed,body.focusing .status,body.focusing .corner,body.focusing .dock{opacity:.18;filter:blur(2px);pointer-events:none;transition:.5s}
 
   .toast{position:fixed;left:50%;bottom:96px;transform:translateX(-50%) translateY(10px);z-index:40;background:var(--glass-2);border:1px solid var(--edge);border-radius:12px;padding:10px 16px;font-size:13px;color:var(--ink);backdrop-filter:blur(12px);box-shadow:0 16px 40px rgba(0,0,0,.45);opacity:0;pointer-events:none;transition:.3s;max-width:90vw}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
@@ -320,7 +317,7 @@
         <button class="chip" data-i="browser">open a web page</button>
       </div>
       <div class="combar-row">
-        <div class="presence sm" id="presence" title="tap to speak — or press /"><span class="halo"></span><span class="core"></span></div>
+        <div class="presence sm" id="presence"><span class="halo"></span><span class="core"></span></div>
         <div class="bar"><input id="say" placeholder="Speak, or type anything…   (or press /)" aria-label="intent" /><button class="ib" id="mic">🎙</button><button class="ib send" id="send">→</button></div>
       </div>
     </div>
@@ -384,7 +381,6 @@
     </div>
   </div>
 
-  <button class="backpill" id="backpill">← the hearth <span class="k">esc</span></button>
   <div class="toast" id="toast"></div>
 
 <script>
@@ -584,7 +580,6 @@ function agentConverse(w,kind,text){const thread=w.querySelector('.thread');
 /* ---------- the window manager: surfaces coexist, in places ---------- */
 const space=$('#os');let zTop=10,opened=0,undoStack=null;const dock=$('#dock');
 function focusWin(w){w.style.zIndex=++zTop;}
-const backpill=$('#backpill');
 /* attention depths: bring one surface forward (immersive) and recede the rest */
 /* three sizes: small (windowed) · big (takes the room) · full (literal full screen, for deep focus) */
 function setSize(w,size){
@@ -594,7 +589,6 @@ function setSize(w,size){
   else { if(!w._box) w._box={left:w.style.left,top:w.style.top,width:w.style.width}; w.style.left='';w.style.top='';w.style.width=''; try{w.getAnimations().forEach(a=>a.cancel());}catch(e){} w.classList.add(size==='full'?'full':'focused'); }
   const immersive = size!=='small';
   document.body.classList.toggle('focusing', immersive);
-  backpill.classList.toggle('show', immersive);
   if(immersive) focusWin(w);
   markSize(w,size);
 }
@@ -602,7 +596,6 @@ function markSize(w,size){ w.querySelectorAll('[data-size]').forEach(b=>b.classL
 function restoreBox(w){ if(w._box){ w.style.left=w._box.left; w.style.top=w._box.top; w.style.width=w._box.width; w._box=null; } }
 function focusSurface(w){ setSize(w,'big'); }
 function unfocus(){ document.querySelectorAll('.win.focused,.win.full').forEach(x=>setSize(x,'small')); }
-backpill.onclick=unfocus;
 document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ if($('#summon').classList.contains('on')) closeSummon(); else unfocus(); } });
 function summon(kind,opts){opts=opts||{};
   if(kind==='voice'){openLayer('voice');return;}
@@ -615,12 +608,13 @@ function summon(kind,opts){opts=opts||{};
   const x=opts.x ?? Math.max(210,Math.min(innerWidth-460,innerWidth*0.5-220+((opened*30)%160)-60));
   const y=opts.y ?? (120+((opened*26)%150));
   w.style.left=x+'px';w.style.top=y+'px';w.style.zIndex=++zTop;
-  w.innerHTML=`<div class="winbar"><span class="bdot"></span><span class="wt">${opts.task||(SESSIONS[kind]&&SESSIONS[kind].task)||TITLES[kind]||kind}</span><span class="wpush"></span><button class="wb on" data-size="small" title="fit to content">⤡</button><button class="wb" data-size="big" title="bigger window">⤢</button><button class="wb" data-size="full" title="full screen">⛶</button><button class="wb" data-x2 title="close">×</button></div><div class="winbody"><div class="agentpanel">${agentStrip(kind)}</div><div class="appcontent">${build()}</div></div>`;
+  w.innerHTML=`<div class="winbar"><span class="bdot"></span><span class="wt">${opts.task||(SESSIONS[kind]&&SESSIONS[kind].task)||TITLES[kind]||kind}</span><span class="wpush"></span><button class="wb on" data-size="small" title="fit to content">⤡</button><button class="wb" data-size="big" title="bigger window">⤢</button><button class="wb" data-size="full" title="full screen">⛶</button><button class="wb" data-min title="minimize">–</button><button class="wb" data-x2 title="close">×</button></div><div class="winbody"><div class="agentpanel">${agentStrip(kind)}</div><div class="appcontent">${build()}</div></div>`;
   space.appendChild(w);opened++;if(kind==='browser'){w.style.width='min(560px,92vw)';focusSurface(w);}
   w.animate([{opacity:0,transform:'translateY(16px) scale(.98)',filter:'blur(10px)'},{opacity:1,transform:'none',filter:'blur(0)'}],{duration:560,easing:'cubic-bezier(.2,.7,.2,1)',fill:'both'});
   drag(w,w.querySelector('.winbar'));wire(w,kind);
   w.addEventListener('pointerdown',()=>focusWin(w),true);
   w.querySelector('[data-x2]').onclick=()=>closeWin(w);
+  w.querySelector('[data-min]').onclick=()=>{ setSize(w,'small'); aside(w,w.dataset.kind); };
   w.querySelectorAll('[data-size]').forEach(b=>b.onclick=()=>setSize(w,b.dataset.size));
   w.querySelector('.winbar').addEventListener('dblclick',e=>{if(!e.target.closest('.wb'))focusSurface(w);});
   wireAgentbar(w,kind);
@@ -682,12 +676,13 @@ function liveSession(intent){
   const w=document.createElement('div');w.className='win';w.dataset.kind='live';
   w.style.left=Math.max(210,Math.min(innerWidth-460,innerWidth*0.5-220+((opened*30)%160)-60))+'px';
   w.style.top=(120+((opened*26)%150))+'px';w.style.zIndex=++zTop;
-  w.innerHTML=`<div class="winbar"><span class="bdot"></span><span class="wt">${escapeHtml(intent)}</span><span class="wpush"></span><button class="wb on" data-size="small" title="fit to content">⤡</button><button class="wb" data-size="big" title="bigger window">⤢</button><button class="wb" data-size="full" title="full screen">⛶</button><button class="wb" data-x2 title="close">×</button></div><div class="winbody"><div class="agentpanel"><div class="agenthd"><span class="adot"></span><span class="ast">working…</span></div><div class="thread"></div><div class="agentsay"><input placeholder="message the agent…" data-agentinput aria-label="message the agent"/><button class="as-send" data-agentsend>↗</button></div></div><div class="appcontent"><div class="surfacehost"></div><div class="glassbox"></div></div></div>`;
+  w.innerHTML=`<div class="winbar"><span class="bdot"></span><span class="wt">${escapeHtml(intent)}</span><span class="wpush"></span><button class="wb on" data-size="small" title="fit to content">⤡</button><button class="wb" data-size="big" title="bigger window">⤢</button><button class="wb" data-size="full" title="full screen">⛶</button><button class="wb" data-min title="minimize">–</button><button class="wb" data-x2 title="close">×</button></div><div class="winbody"><div class="agentpanel"><div class="agenthd"><span class="adot"></span><span class="ast">working…</span></div><div class="thread"></div><div class="agentsay"><input placeholder="message the agent…" data-agentinput aria-label="message the agent"/><button class="as-send" data-agentsend>↗</button></div></div><div class="appcontent"><div class="surfacehost"></div><div class="glassbox"></div></div></div>`;
   space.appendChild(w);opened++;
   w.animate([{opacity:0,transform:'translateY(16px) scale(.98)',filter:'blur(10px)'},{opacity:1,transform:'none',filter:'blur(0)'}],{duration:560,easing:'cubic-bezier(.2,.7,.2,1)',fill:'both'});
   drag(w,w.querySelector('.winbar'));
   w.addEventListener('pointerdown',()=>focusWin(w),true);
   w.querySelector('[data-x2]').onclick=()=>closeWin(w);
+  w.querySelector('[data-min]').onclick=()=>{ setSize(w,'small'); aside(w,w.dataset.kind); };
   w.querySelectorAll('[data-size]').forEach(b=>b.onclick=()=>setSize(w,b.dataset.size));
   w.querySelector('.winbar').addEventListener('dblclick',e=>{if(!e.target.closest('.wb'))focusSurface(w);});
   const input=w.querySelector('[data-agentinput]'),send=w.querySelector('[data-agentsend]');
