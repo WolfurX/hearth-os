@@ -106,6 +106,28 @@ impl Hearthd {
         }
     }
 
+    /// Is `full` (a dotted `cap.tool` id) a real tool — in-process or MCP?
+    fn tool_exists(&self, full: &str) -> bool {
+        self.host.has(full)
+            || full.rsplit_once('.').map_or(false, |(c, t)| self.registry.knows(c, t))
+    }
+
+    /// Normalise the model's `(capability, tool)` to a real tool. Models often mis-split a
+    /// dotted name — e.g. emitting `cap="fs.read", tool="read"` for the tool `fs.read` — so we
+    /// try the obvious recombinations and, on a match, return the canonical split (everything
+    /// before the last dot is the capability). A truly-unknown tool passes through unchanged,
+    /// so the gate's deny-by-default still refuses it.
+    fn resolve(&self, cap: &str, tool: &str) -> (String, String) {
+        for full in [format!("{cap}.{tool}"), cap.to_string(), tool.to_string()] {
+            if self.tool_exists(&full) {
+                if let Some((c, t)) = full.rsplit_once('.') {
+                    return (c.to_string(), t.to_string());
+                }
+            }
+        }
+        (cap.to_string(), tool.to_string())
+    }
+
     /// One turn of the loop, as structured data — the single source of truth used by the
     /// CLI (`run`). Plans, gates, acts, audits. A thin wrapper over [`Self::turn_streaming`].
     pub fn turn(&self, intent: &str, approve: bool) -> Result<TurnResult> {
@@ -184,7 +206,8 @@ impl Hearthd {
             // act — gated, snapshotted, audited; each completed step streams out at once
             let mut terminal = false;
             for st in &plan.steps {
-                let (cap, tool, args) = (st.capability.as_str(), st.tool.as_str(), &st.args);
+                let (rcap, rtool) = self.resolve(&st.capability, &st.tool);
+                let (cap, tool, args) = (rcap.as_str(), rtool.as_str(), &st.args);
                 let decision = self.decide(cap, tool);
                 let mut sr = StepResult {
                     capability: cap.to_string(),
