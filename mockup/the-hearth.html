@@ -23,6 +23,19 @@
     --ok:#73d6a8;--warn:#e8c069;
     --serif:"Fraunces",ui-serif,Georgia,serif;--sans:"Inter Tight",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;--mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
   }
+  /* light theme — a sunlit room rather than a dark one; the ember stays warm */
+  html[data-theme="light"]{
+    --void:#f1eee8;--warm:#d9772d;--warm-hot:#f0a85e;--warm-deep:#c2592a;
+    --cool:#3f6fbf;--violet:#6a5ed0;--teal:#1f9296;
+    --ink:#1c1f27;--muted:#535b6c;--faint:#8a92a3;
+    --glass:rgba(255,255,255,.6);--glass-2:rgba(255,255,255,.8);--edge:rgba(22,26,42,.14);--line:rgba(22,26,42,.08);
+    --ok:#2e9e6b;--warn:#b1851d;
+  }
+  html[data-theme="light"] .vignette{background:radial-gradient(135% 125% at 50% 40%,transparent 58%,rgba(90,96,120,.12))}
+  html[data-theme="light"] .grain{mix-blend-mode:multiply;background-image:radial-gradient(rgba(40,44,64,.05) 1px,transparent 1px)}
+  html[data-theme="light"] .intent.combar{background:linear-gradient(to top,rgba(255,255,255,.72),rgba(255,255,255,.14));border-top-color:rgba(22,26,42,.08)}
+  html[data-theme="light"] .surf-input,html[data-theme="light"] .gb-res,html[data-theme="light"] .draft .body,html[data-theme="light"] .surf-fields,html[data-theme="light"] .surf-tile,html[data-theme="light"] .surf-bullet+.surf-bullet{background:rgba(22,26,42,.04)}
+  html[data-theme="light"] .meter{background:rgba(22,26,42,.08)}
   *{box-sizing:border-box}
   html,body{height:100%;margin:0}
   body{font-family:var(--sans);color:var(--ink);background:var(--void);overflow:hidden;-webkit-font-smoothing:antialiased;user-select:none}
@@ -307,6 +320,7 @@
   .surf-input:focus{border-color:rgba(244,162,89,.5);background:rgba(0,0,0,.24)}
   .surf-input:empty::before{content:attr(data-ph);color:var(--faint)}
 </style>
+<script>try{document.documentElement.dataset.theme=localStorage.getItem('hearth-theme')||'dark';}catch(e){document.documentElement.dataset.theme='dark';}</script>
 </head>
 <body>
   <canvas id="aurora"></canvas><div class="grain"></div><div class="vignette"></div>
@@ -327,7 +341,7 @@
     </div>
 
     <div class="dock" id="dock"></div>
-    <div class="corner"><button id="relive">⟲ first boot</button><button id="warmer">warmer</button><button id="cooler">cooler</button></div>
+    <div class="corner"><button id="relive">⟲ first boot</button><button id="themeToggle">☀ light</button><button id="warmer">warmer</button><button id="cooler">cooler</button></div>
   </div>
 
   <!-- voice: a moment, over the field -->
@@ -394,11 +408,13 @@
   size();addEventListener('resize',size);const reduce=matchMedia('(prefers-reduced-motion:reduce)').matches;
   function blob(x,y,r,rgb,a){if(a<=0)return;const g=ctx.createRadialGradient(x,y,0,x,y,r);g.addColorStop(0,`rgba(${rgb},${a})`);g.addColorStop(1,`rgba(${rgb},0)`);ctx.fillStyle=g;ctx.beginPath();ctx.arc(x,y,r,0,6.2832);ctx.fill();}
   let t=0,last=0;window.__attend=0;window.__warm=0;
-  function draw(){t+=0.0065;ctx.clearRect(0,0,W,H);ctx.globalCompositeOperation='lighter';
+  function draw(){t+=0.0065;ctx.clearRect(0,0,W,H);
+    const light=document.documentElement.dataset.theme==='light',aM=light?2.6:1;
+    ctx.globalCompositeOperation=light?'multiply':'lighter';
     const cx=W*0.5,cy=H*0.30,m=Math.min(W,H),br=0.5+0.5*Math.sin(t*0.95),at=window.__attend,wb=window.__warm;
-    blob(cx,cy,m*0.5,'244,162,89',0.045+0.04*br+0.12*at+0.05*wb);blob(cx,cy,m*0.24,'255,217,168',0.04+0.05*br+0.13*at+0.05*wb);
-    for(let i=0;i<3;i++){const ph=t*0.55+i*2.1,x=W*(0.5+0.42*Math.sin(ph*0.6+i)),y=H*(0.5+0.22*Math.cos(ph*0.5+i*1.3));blob(x,y,m*0.34,(i%2?'110,160,224':'138,127,224'),Math.max(0,0.04+0.03*Math.sin(ph)-0.02*wb));}
-    blob(W*(0.5+0.3*Math.sin(t*0.3)),H*(0.78+0.1*Math.cos(t*0.4)),m*0.3,'73,198,201',Math.max(0,0.028-0.015*wb));
+    blob(cx,cy,m*0.5,'244,162,89',(0.045+0.04*br+0.12*at+0.05*wb)*aM);blob(cx,cy,m*0.24,'255,217,168',(0.04+0.05*br+0.13*at+0.05*wb)*aM);
+    for(let i=0;i<3;i++){const ph=t*0.55+i*2.1,x=W*(0.5+0.42*Math.sin(ph*0.6+i)),y=H*(0.5+0.22*Math.cos(ph*0.5+i*1.3));blob(x,y,m*0.34,(i%2?'110,160,224':'138,127,224'),Math.max(0,(0.04+0.03*Math.sin(ph)-0.02*wb))*aM);}
+    blob(W*(0.5+0.3*Math.sin(t*0.3)),H*(0.78+0.1*Math.cos(t*0.4)),m*0.3,'73,198,201',Math.max(0,(0.028-0.015*wb))*aM);
     ctx.globalCompositeOperation='source-over';window.__attend*=0.965;}
   function loop(ts){if(ts-last>32){last=ts;draw();}requestAnimationFrame(loop);}
   if(reduce){window.__attend=0.3;draw();}else requestAnimationFrame(loop);
@@ -830,6 +846,11 @@ $('#summon').addEventListener('click',e=>{ if(e.target.id==='summon') closeSummo
 /* customization: talk the room warmer/cooler */
 $('#warmer').onclick=()=>{window.__warm=Math.min(1.4,(window.__warm||0)+0.35);pulse();toast('Warmer — nudged the light toward the ember.');};
 $('#cooler').onclick=()=>{window.__warm=Math.max(0,(window.__warm||0)-0.35);attend(.3);toast('Cooler — back toward the aurora.');};
+
+/* light / dark theme — the ember stays warm in both */
+function applyTheme(th){document.documentElement.dataset.theme=th;const b=$('#themeToggle');if(b)b.textContent=th==='light'?'☾ dark':'☀ light';try{localStorage.setItem('hearth-theme',th);}catch(e){}}
+$('#themeToggle').onclick=()=>applyTheme(document.documentElement.dataset.theme==='light'?'dark':'light');
+applyTheme(document.documentElement.dataset.theme||'dark');
 
 /* model pill — neutral, swappable */
 $('#modelPill').onclick=()=>{const m=['⬡ <b>local</b> · llama','⬡ <b>API</b> · claude','⬡ <b>subscription</b> · gpt'];$('#modelPill')._i=(($('#modelPill')._i||0)+1)%3;$('#modelPill').innerHTML=m[$('#modelPill')._i];toast('Switched the model — your Brain comes with you.');pulse();};
