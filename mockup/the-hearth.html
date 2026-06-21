@@ -43,7 +43,11 @@
   .ev.in{opacity:1;transform:none} .ev.fade{opacity:.4}
   .ev .ic{flex:none;width:14px;text-align:center;color:var(--faint)} .ev .ic.done{color:var(--ok)} .ev .ic.work{color:var(--warm)}
   .ev .tm{color:var(--faint);font-variant-numeric:tabular-nums;flex:none}
-  .ev.act{cursor:pointer} .ev.act:hover{color:var(--ink)}
+  .ev.act .tx{cursor:pointer} .ev.act:hover .tx{color:var(--ink)}
+  .ev .ic.attn{color:var(--warm);font-weight:700}
+  .ev.attn .tx{color:var(--ink)}
+  .ev .evx{flex:none;width:15px;height:15px;border:0;background:transparent;color:var(--faint);cursor:pointer;font-size:13px;line-height:1;opacity:0;transition:.15s;padding:0}
+  .ev:hover .evx{opacity:.55} .ev .evx:hover{opacity:1;color:var(--warm)}
   .spin{display:inline-block;width:11px;height:11px;border:1.5px solid rgba(244,162,89,.3);border-top-color:var(--warm);border-radius:50%;animation:spin .8s linear infinite}
   @keyframes spin{to{transform:rotate(360deg)}}
 
@@ -381,7 +385,6 @@
     </div>
   </div>
 
-  <div class="toast" id="toast"></div>
 
 <script>
 /* ---------- aurora: living light with a source ---------- */
@@ -402,7 +405,7 @@
 })();
 const attend=(v=1)=>{window.__attend=Math.min(1,(window.__attend||0)+v);};
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
-const toast=m=>{const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2600);};
+const toast=(m,opts)=>notify(m,opts||{});
 const presence=$('#presence');
 function pulse(){presence.classList.add('attending');attend(.7);clearTimeout(pulse._t);pulse._t=setTimeout(()=>presence.classList.remove('attending'),1400);}
 
@@ -412,22 +415,32 @@ function pulse(){presence.classList.add('attending');attend(.7);clearTimeout(pul
 
 /* ---------- the machine, alive: ambient activity stream ---------- */
 const feed=$('#feed');
+function timeNow(){const d=new Date();return d.getHours()+':'+String(d.getMinutes()).padStart(2,'0');}
 function evRow(o){
-  const row=document.createElement('div');row.className='ev'+(o.act?' act':'');
-  const ic=o.s==='work'?'<span class="spin"></span>':o.s==='done'?'✓':'·';
-  row.innerHTML=`<span class="ic ${o.s||''}">${ic}</span><span class="tx">${o.m}</span><span class="tm" style="margin-left:auto">${o.t||''}</span>`;
-  if(o.act)row.onclick=()=>summon(o.act);
+  const row=document.createElement('div');row.className='ev'+(o.act||o.onClick?' act':'')+(o.s==='attn'?' attn':'');
+  const ic=o.s==='work'?'<span class="spin"></span>':o.s==='done'?'✓':o.s==='attn'?'!':'·';
+  row.innerHTML=`<span class="ic ${o.s||''}">${ic}</span><span class="tx">${o.m}</span><span class="tm" style="margin-left:auto">${o.t||''}</span><button class="evx" title="dismiss">×</button>`;
+  const click=o.onClick||(o.act?()=>summon(o.act):null);
+  if(click){const tx=row.querySelector('.tx');tx.style.cursor='pointer';tx.onclick=click;}
+  row.querySelector('.evx').onclick=e=>{e.stopPropagation();row.remove();};
   feed.insertBefore(row,feed.children[1]||null);requestAnimationFrame(()=>row.classList.add('in'));
-  while(feed.querySelectorAll('.ev').length>7){const last=feed.querySelector('.ev:last-child');last&&last.remove();}
-  [...feed.querySelectorAll('.ev')].forEach((e,i)=>e.classList.toggle('fade',i>4));
+  while(feed.querySelectorAll('.ev').length>9){const last=feed.querySelector('.ev:last-child');last&&last.remove();}
+  [...feed.querySelectorAll('.ev')].forEach((e,i)=>e.classList.toggle('fade',i>6));
   return row;
+}
+/* the one place everything that wants your attention lands — notices, confirmations, app
+   messages, the steward's tending. Calm, newest on top, dismissible. type: attention|tending|done|info */
+function notify(text,opts={}){
+  const map={attention:'attn',tending:'work',done:'done',info:''};
+  return evRow({m:text,s:opts.type in map?map[opts.type]:'',t:opts.time||timeNow(),act:opts.act,onClick:opts.onClick});
 }
 function resolve(row,m){const ic=row.querySelector('.ic');ic.innerHTML='✓';ic.className='ic done';if(m)row.querySelector('.tx').textContent=m;}
 (function feedInit(){
-  feed.innerHTML='<div class="cap"><span class="live"></span> the steward is tending</div>';
+  feed.innerHTML='<div class="cap"><span class="live"></span> notifications</div>';
   [{t:'9:02',s:'done',m:'applied 2 security updates'},
    {t:'9:11',s:'done',m:'rebuilt rtl8821ce after kernel update'},
-   {t:'now',s:'work',m:'watching 3 email threads',act:'mail'}].forEach(evRow);
+   {t:'now',s:'work',m:'watching 3 email threads',act:'mail'},
+   {t:'now',s:'attn',m:'A reply to the landlord is drafted — send when ready',act:'mail'}].forEach(evRow);
   const q=[{m:'consolidating today into the Brain',then:'learned 2 new things',act:'brain'},
     {m:'reclaimed 1.2 GB of caches'},{m:'snapshotted the system',},{m:'checked drivers — all current'},
     {m:'indexed 14 new files'},{m:'blocked 3 trackers on meridian.press',act:'browser'},{m:'watching battery · healthy'}];
@@ -724,7 +737,7 @@ async function runLive(w,intent,approve){
   else{const gh=gb.querySelector('.gb-h');if(gh)gh.textContent=held.length?'the glass box · awaiting your ok':'the glass box · exactly what I did';}
   if(held.length)addApprove(gb,()=>runLive(w,intent,true));
   const a=document.createElement('div');a.className='amsg';
-  if(held.length){a.innerHTML='I need your ok before I '+escapeHtml(held.map(s=>s.capability+'.'+s.tool).join(' and '))+'. <span style="color:var(--faint)">— approve in the panel →</span>';if(ast)ast.textContent='your ok?';}
+  if(held.length){a.innerHTML='I need your ok before I '+escapeHtml(held.map(s=>s.capability+'.'+s.tool).join(' and '))+'. <span style="color:var(--faint)">— approve in the panel →</span>';if(ast)ast.textContent='your ok?';notify('Waiting on your ok — '+intent,{type:'attention',onClick:()=>focusSurface(w)});}
   else{const last=[...steps].reverse().find(s=>s.result);a.textContent=last?last.result:(summary||'Done.');if(ast)ast.textContent='done';attend(.6);}
   thread.appendChild(a);thread.scrollTop=thread.scrollHeight;
 }
