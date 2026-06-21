@@ -4,13 +4,15 @@
 //! It serves the UI at `/` and exposes the steward as an API the shell drives:
 //!
 //! - `GET  /`            → the UI (so the shell and the API are same-origin)
-//! - `POST /api/intent`  → run one turn (`{intent, approve}`) → the structured result
+//! - `POST /api/intent`  → run one turn (`{intent, approve}`) → a **stream** of NDJSON
+//!                         events (the live tool-trail): `recalled` → `plan` → `step`… → `done`
 //! - `GET  /api/brain`   → the Brain's curated pages ("what do you know about me?")
 //! - `POST /api/forget`  → forget a curated page (`{page}`) → snapshot-first, undoable
 //!
-//! Single-threaded by design: one owner, one steward, requests handled in order.
+//! Single-threaded by design: one owner, one steward, requests handled in order. A turn
+//! holds its connection open while it streams — fine, since the owner runs one task at a time.
 
-use crate::Hearthd;
+use crate::{Hearthd, StreamEvent};
 use anyhow::Result;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -73,6 +75,11 @@ fn handle(h: &Hearthd, mut stream: TcpStream, ui: Option<&Path>) -> Result<()> {
         reader.read_exact(&mut body)?;
     }
 
+    // The one streaming route: a turn dribbles its tool-trail out as it happens.
+    if method == "POST" && path == "/api/intent" {
+        return stream_intent(h, stream, &body);
+    }
+
     let (status, ctype, payload) = respond(h, &method, &path, &body, ui);
 
     let head = format!(
@@ -123,16 +130,7 @@ fn respond(
             }
             json_result(h.forget(&page))
         }
-        ("POST", "/api/intent") => {
-            let v: serde_json::Value =
-                serde_json::from_slice(body).unwrap_or_else(|_| serde_json::json!({}));
-            let intent = v.get("intent").and_then(|x| x.as_str()).unwrap_or("").to_string();
-            let approve = v.get("approve").and_then(|x| x.as_bool()).unwrap_or(false);
-            if intent.trim().is_empty() {
-                return ("400 Bad Request", "application/json", br#"{"error":"no intent"}"#.to_vec());
-            }
-            json_result(h.turn(&intent, approve))
-        }
+        // ("POST", "/api/intent") is handled before respond() — it streams (see stream_intent).
         _ => ("404 Not Found", "application/json", br#"{"error":"not found"}"#.to_vec()),
     }
 }
@@ -150,4 +148,60 @@ fn json_result<T: serde::Serialize>(r: Result<T>) -> (&'static str, &'static str
 fn error_json(msg: &str) -> (&'static str, &'static str, Vec<u8>) {
     let body = serde_json::to_vec(&serde_json::json!({ "error": msg })).unwrap_or_default();
     ("500 Internal Server Error", "application/json", body)
+}
+
+/// Run a turn and stream its events as newline-delimited JSON, flushing after each so the
+/// shell sees the tool-trail unfold live. The body has no `Content-Length`; the shell reads
+/// until the connection closes (`fetch().body` + a streaming reader).
+fn stream_intent(h: &Hearthd, mut stream: TcpStream, body: &[u8]) -> Result<()> {
+    let v: serde_json::Value = serde_json::from_slice(body).unwrap_or_else(|_| serde_json::json!({}));
+    let intent = v.get("intent").and_then(|x| x.as_str()).unwrap_or("").to_string();
+    let approve = v.get("approve").and_then(|x| x.as_bool()).unwrap_or(false);
+    if intent.trim().is_empty() {
+        return write_buffered(&mut stream, "400 Bad Request", "application/json", br#"{"error":"no intent"}"#);
+    }
+
+    let head = "HTTP/1.1 200 OK\r\n\
+        Content-Type: application/x-ndjson\r\n\
+        Access-Control-Allow-Origin: *\r\n\
+        Cache-Control: no-cache\r\n\
+        Connection: close\r\n\r\n";
+    stream.write_all(head.as_bytes())?;
+    stream.flush()?;
+
+    // Each event → one JSON line, flushed immediately. Write errors (the shell hung up)
+    // are swallowed: the turn still completes server-side, snapshots and all.
+    let result = {
+        let mut sink = |ev: &StreamEvent| {
+            if let Ok(mut line) = serde_json::to_vec(ev) {
+                line.push(b'\n');
+                let _ = stream.write_all(&line);
+                let _ = stream.flush();
+            }
+        };
+        h.turn_streaming(&intent, approve, &mut sink)
+    };
+    if let Err(e) = result {
+        let line = serde_json::json!({ "event": "error", "message": e.to_string() }).to_string();
+        let _ = stream.write_all(line.as_bytes());
+        let _ = stream.write_all(b"\n");
+        let _ = stream.flush();
+    }
+    Ok(())
+}
+
+/// Write a complete, length-delimited response (the non-streaming fallback, e.g. a 400).
+fn write_buffered(stream: &mut TcpStream, status: &str, ctype: &str, payload: &[u8]) -> Result<()> {
+    let head = format!(
+        "HTTP/1.1 {status}\r\n\
+         Content-Type: {ctype}\r\n\
+         Access-Control-Allow-Origin: *\r\n\
+         Content-Length: {}\r\n\
+         Connection: close\r\n\r\n",
+        payload.len()
+    );
+    stream.write_all(head.as_bytes())?;
+    stream.write_all(payload)?;
+    stream.flush()?;
+    Ok(())
 }

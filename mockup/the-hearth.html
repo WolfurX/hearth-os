@@ -632,29 +632,49 @@ async function runLive(w,intent,approve){
   const work=document.createElement('div');work.className='amsg thinking';
   work.innerHTML='<span class="tdots"><i></i><i></i><i></i></span> thinking…';
   thread.appendChild(work);thread.scrollTop=thread.scrollHeight;pulse();
-  let r;
-  try{r=await api('/api/intent',{intent,approve:!!approve});}
-  catch(e){work.classList.remove('thinking');work.classList.add('err');work.textContent="I couldn't reach the runtime — "+e.message;if(ast)ast.textContent='offline';return;}
-  work.classList.remove('thinking');
-  const held=r.steps.filter(s=>s.decision==='ask'&&!s.ran);
-  work.innerHTML=escapeHtml(r.summary||'Done.')+(r.recalled&&r.recalled.length?` <span style="color:var(--faint)">· recalled ${escapeHtml(r.recalled.join(', '))}</span>`:'');
-  renderGlass(gb,r,held.length>0,()=>runLive(w,intent,true));
+  let res;
+  try{res=await fetch('/api/intent',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({intent,approve:!!approve})});}
+  catch(e){return liveFail(work,ast,e.message);}
+  if(!res.ok||!res.body){return liveFail(work,ast,'runtime '+res.status);}
+  // stream the tool-trail as it happens — NDJSON: recalled → plan → step… → done
+  const reader=res.body.getReader(),dec=new TextDecoder();
+  const steps=[];let summary='',recalled=[],sawDone=false,buf='';
+  gb.innerHTML='<div class="gb-h">the glass box · what I\'m doing, live</div>';
+  try{for(;;){const {value,done}=await reader.read();if(done)break;
+    buf+=dec.decode(value,{stream:true});let nl;
+    while((nl=buf.indexOf('\n'))>=0){const line=buf.slice(0,nl).trim();buf=buf.slice(nl+1);if(!line)continue;
+      let ev;try{ev=JSON.parse(line);}catch(_){continue;}
+      if(ev.event==='recalled')recalled=ev.recalled||[];
+      else if(ev.event==='plan'){summary=ev.summary||'';work.classList.remove('thinking');
+        work.innerHTML=escapeHtml(summary||'Working…')+(recalled.length?` <span style="color:var(--faint)">· recalled ${escapeHtml(recalled.join(', '))}</span>`:'');
+        if(ast)ast.textContent=(ev.planner&&ev.planner!=='heuristic')?('planning · '+ev.planner):'working…';thread.scrollTop=thread.scrollHeight;}
+      else if(ev.event==='step'){steps.push(ev.step);appendGlassStep(gb,ev.step);pulse();thread.scrollTop=thread.scrollHeight;}
+      else if(ev.event==='done')sawDone=true;
+      else if(ev.event==='error')return liveFail(work,ast,ev.message);
+    }}}
+  catch(e){return liveFail(work,ast,e.message);}
+  if(work.classList.contains('thinking')){work.classList.remove('thinking');work.innerHTML=escapeHtml(summary||'Done.');}
+  const held=steps.filter(s=>s.decision==='ask'&&!s.ran);
+  if(!steps.length){gb.innerHTML='<div class="gb-empty">'+(sawDone?'Nothing to do for that.':'The runtime closed early.')+'</div>';}
+  else{const gh=gb.querySelector('.gb-h');if(gh)gh.textContent=held.length?'the glass box · awaiting your ok':'the glass box · exactly what I did';}
+  if(held.length)addApprove(gb,()=>runLive(w,intent,true));
   const a=document.createElement('div');a.className='amsg';
   if(held.length){a.innerHTML='I need your ok before I '+escapeHtml(held.map(s=>s.capability+'.'+s.tool).join(' and '))+'. <span style="color:var(--faint)">— approve in the panel →</span>';if(ast)ast.textContent='your ok?';}
-  else{const last=[...r.steps].reverse().find(s=>s.result);a.textContent=last?last.result:'Done.';if(ast)ast.textContent='done';attend(.6);}
+  else{const last=[...steps].reverse().find(s=>s.result);a.textContent=last?last.result:(summary||'Done.');if(ast)ast.textContent='done';attend(.6);}
   thread.appendChild(a);thread.scrollTop=thread.scrollHeight;
 }
-function renderGlass(gb,r,hasHeld,onApprove){
-  if(!r.steps||!r.steps.length){gb.innerHTML='<div class="gb-empty">Nothing to do for that.</div>';return;}
-  gb.innerHTML='<div class="gb-h">the glass box · exactly what I did</div>'+r.steps.map(s=>{
-    const badge=s.decision==='forbid'?'<span class="gb-badge forbid">declined</span>':(s.decision==='ask'&&!s.ran)?'<span class="gb-badge ask">needs your ok</span>':s.decision==='ask'?'<span class="gb-badge auto">approved</span>':'<span class="gb-badge auto">acted</span>';
-    const snap=s.snapshot!=null?` <span class="gb-snap">snapshot #${s.snapshot} · undoable</span>`:'';
-    const res=s.result?`<div class="gb-res">${escapeHtml(s.result)}</div>`:'';
-    const why=s.why?`<div class="gb-why">${escapeHtml(s.why)}</div>`:'';
-    return `<div class="gb-step"><div class="gb-top"><span class="gb-tool">${escapeHtml(s.capability+'.'+s.tool)}</span> ${badge}${snap}</div>${why}${res}</div>`;
-  }).join('');
-  if(hasHeld){const b=document.createElement('button');b.className='go';b.style.marginTop='4px';b.textContent='Approve & continue';b.onclick=()=>{b.disabled=true;b.textContent='…';onApprove();};gb.appendChild(b);}
+function liveFail(work,ast,msg){work.classList.remove('thinking');work.classList.add('err');work.textContent="I couldn't reach the runtime — "+msg;if(ast)ast.textContent='offline';}
+/* one glass-box row per step — shared by the live stream (appended) and any full render */
+function gbStepHtml(s){
+  const badge=s.decision==='forbid'?'<span class="gb-badge forbid">declined</span>':(s.decision==='ask'&&!s.ran)?'<span class="gb-badge ask">needs your ok</span>':s.decision==='ask'?'<span class="gb-badge auto">approved</span>':'<span class="gb-badge auto">acted</span>';
+  const snap=s.snapshot!=null?` <span class="gb-snap">snapshot #${s.snapshot} · undoable</span>`:'';
+  const res=s.result?`<div class="gb-res">${escapeHtml(s.result)}</div>`:'';
+  const why=s.why?`<div class="gb-why">${escapeHtml(s.why)}</div>`:'';
+  return `<div class="gb-step"><div class="gb-top"><span class="gb-tool">${escapeHtml(s.capability+'.'+s.tool)}</span> ${badge}${snap}</div>${why}${res}</div>`;
 }
+function appendGlassStep(gb,s){const d=document.createElement('div');d.innerHTML=gbStepHtml(s);const el=d.firstElementChild;if(!el)return;gb.appendChild(el);
+  el.animate&&el.animate([{opacity:0,transform:'translateY(6px)'},{opacity:1,transform:'none'}],{duration:340,easing:'cubic-bezier(.2,.7,.2,1)'});}
+function addApprove(gb,onApprove){const b=document.createElement('button');b.className='go';b.style.marginTop='4px';b.textContent='Approve & continue';b.onclick=()=>{b.disabled=true;b.textContent='…';onApprove();};gb.appendChild(b);}
 
 /* ---------- intent ---------- */
 const intent=$('#intent'),say=$('#say');

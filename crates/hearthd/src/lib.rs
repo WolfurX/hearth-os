@@ -104,9 +104,22 @@ impl Hearthd {
         }
     }
 
-    /// One turn of the loop, as structured data — the single source of truth used by both
-    /// the CLI (`run`) and the server (`/api/intent`). Plans, gates, acts, audits.
+    /// One turn of the loop, as structured data — the single source of truth used by the
+    /// CLI (`run`). Plans, gates, acts, audits. A thin wrapper over [`Self::turn_streaming`].
     pub fn turn(&self, intent: &str, approve: bool) -> Result<TurnResult> {
+        self.turn_streaming(intent, approve, |_: &StreamEvent| {})
+    }
+
+    /// One turn, emitting [`StreamEvent`]s as it happens — the live tool-trail behind the
+    /// streaming server (`/api/intent`). `emit` is called in order: `recalled` → `plan` →
+    /// one `step` per action → `done`. The buffered [`Self::turn`] passes a no-op sink, so
+    /// there is exactly one copy of the loop.
+    pub fn turn_streaming(
+        &self,
+        intent: &str,
+        approve: bool,
+        mut emit: impl FnMut(&StreamEvent),
+    ) -> Result<TurnResult> {
         // context: the constitution + what we already know about the owner
         let system = self.system_prompt()?;
         let mem = hearth_brain::recall::recall(&self.brain.wiki_dir(), intent, 2)?;
@@ -116,6 +129,7 @@ impl Hearthd {
         } else {
             mem.iter().map(|h| format!("- {}", h.snippet)).collect::<Vec<_>>().join("\n")
         };
+        emit(&StreamEvent::Recalled { recalled: &recalled });
         let full_system =
             format!("{system}\n\nWhat you already know about the owner (from memory):\n{known}");
 
@@ -131,8 +145,9 @@ impl Hearthd {
             },
             None => ("heuristic".to_string(), HeuristicPlanner.plan(intent, &full_system)?),
         };
+        emit(&StreamEvent::Plan { planner: &planner, summary: &plan.summary });
 
-        // act — gated, snapshotted, audited
+        // act — gated, snapshotted, audited; each completed step streams out at once
         let mut steps = vec![];
         for st in &plan.steps {
             let (cap, tool, args) = (st.capability.as_str(), st.tool.as_str(), &st.args);
@@ -166,9 +181,12 @@ impl Hearthd {
                     vec!["hearthd".into()],
                 );
             }
+            emit(&StreamEvent::Step { step: &sr });
             steps.push(sr);
         }
-        Ok(TurnResult { recalled, planner, summary: plan.summary, steps })
+        let result = TurnResult { recalled, planner, summary: plan.summary, steps };
+        emit(&StreamEvent::Done { result: &result });
+        Ok(result)
     }
 
     /// One turn, printed for the CLI (the glass box, on the terminal).
@@ -271,4 +289,19 @@ pub struct ForgetResult {
     pub removed: bool,
     pub redacted: usize,
     pub snapshot: u64,
+}
+
+/// A turn's progress, streamed live so the shell can show the tool-trail as it happens.
+/// Internally tagged (`{"event":"step", ...}`) so the UI can dispatch on one field.
+#[derive(serde::Serialize)]
+#[serde(tag = "event", rename_all = "snake_case")]
+pub enum StreamEvent<'a> {
+    /// What the steward pulled from memory for this intent.
+    Recalled { recalled: &'a [String] },
+    /// The plan headline, as soon as it's decided (before acting).
+    Plan { planner: &'a str, summary: &'a str },
+    /// One action, just completed (gated, maybe snapshotted, maybe run).
+    Step { step: &'a StepResult },
+    /// The turn is finished; carries the full result for good measure.
+    Done { result: &'a TurnResult },
 }
