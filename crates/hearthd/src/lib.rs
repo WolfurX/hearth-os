@@ -11,6 +11,7 @@ pub mod plan;
 pub mod server;
 pub mod planner;
 pub mod prompt;
+pub mod protocol;
 pub mod surface;
 pub mod voice;
 

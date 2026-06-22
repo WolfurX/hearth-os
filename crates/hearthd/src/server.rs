@@ -10,6 +10,11 @@
 //! - `POST /api/forget`  → forget a curated page (`{page}`) → snapshot-first, undoable
 //! - `GET  /api/surface` → the canonical reference surface (the Surface DSL made tangible)
 //! - `POST /api/surface/event` → an edit the owner made to a live surface (`{node,kind,value}`) → recorded
+//! - `GET  /api/protocol` → the versioned message contract (see [`crate::protocol`])
+//!
+//! The message shapes (inbound requests, the [`StreamEvent`] stream, the Surface render contract)
+//! are defined and versioned in [`crate::protocol`] — the single source of truth a shell targets,
+//! so this transport can be swapped for a native socket without changing the messages.
 //!
 //! Single-threaded by design: one owner, one steward, requests handled in order. A turn
 //! holds its connection open while it streams — fine, since the owner runs one task at a time.
@@ -124,25 +129,24 @@ fn respond(
         },
         ("GET", "/api/brain") => json_result(h.brain_pages()),
         ("GET", "/api/surface") => json_result(anyhow::Ok(crate::surface::Surface::reference())),
+        ("GET", "/api/protocol") => json_result(anyhow::Ok(crate::protocol::descriptor())),
         ("POST", "/api/surface/event") => {
-            let v: serde_json::Value =
-                serde_json::from_slice(body).unwrap_or_else(|_| serde_json::json!({}));
-            let node = v.get("node").and_then(|x| x.as_str()).unwrap_or("note").to_string();
-            let kind = v.get("kind").and_then(|x| x.as_str()).unwrap_or("edit").to_string();
-            let value = v.get("value").and_then(|x| x.as_str()).unwrap_or("").trim().to_string();
+            let edit: crate::protocol::SurfaceEdit = serde_json::from_slice(body).unwrap_or_default();
+            let node = if edit.node.is_empty() { "note".to_string() } else { edit.node };
+            let kind = if edit.kind.is_empty() { "edit".to_string() } else { edit.kind };
+            let value = edit.value.trim();
             if value.is_empty() {
                 return ("400 Bad Request", "application/json", br#"{"error":"no value"}"#.to_vec());
             }
-            json_result(h.surface_event(&node, &kind, &value))
+            json_result(h.surface_event(&node, &kind, value))
         }
         ("POST", "/api/forget") => {
-            let v: serde_json::Value =
-                serde_json::from_slice(body).unwrap_or_else(|_| serde_json::json!({}));
-            let page = v.get("page").and_then(|x| x.as_str()).unwrap_or("").trim().to_string();
+            let req: crate::protocol::ForgetRequest = serde_json::from_slice(body).unwrap_or_default();
+            let page = req.page.trim();
             if page.is_empty() {
                 return ("400 Bad Request", "application/json", br#"{"error":"no page"}"#.to_vec());
             }
-            json_result(h.forget(&page))
+            json_result(h.forget(page))
         }
         // ("POST", "/api/intent") is handled before respond() — it streams (see stream_intent).
         _ => ("404 Not Found", "application/json", br#"{"error":"not found"}"#.to_vec()),
@@ -168,9 +172,9 @@ fn error_json(msg: &str) -> (&'static str, &'static str, Vec<u8>) {
 /// shell sees the tool-trail unfold live. The body has no `Content-Length`; the shell reads
 /// until the connection closes (`fetch().body` + a streaming reader).
 fn stream_intent(h: &Hearthd, mut stream: TcpStream, body: &[u8]) -> Result<()> {
-    let v: serde_json::Value = serde_json::from_slice(body).unwrap_or_else(|_| serde_json::json!({}));
-    let intent = v.get("intent").and_then(|x| x.as_str()).unwrap_or("").to_string();
-    let approve = v.get("approve").and_then(|x| x.as_bool()).unwrap_or(false);
+    let req: crate::protocol::IntentRequest = serde_json::from_slice(body).unwrap_or_default();
+    let intent = req.intent;
+    let approve = req.approve;
     if intent.trim().is_empty() {
         return write_buffered(&mut stream, "400 Bad Request", "application/json", br#"{"error":"no intent"}"#);
     }
