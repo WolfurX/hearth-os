@@ -49,6 +49,8 @@ impl Default for Registry {
                 ToolSpec { cap: "fs", tool: "write", args: "{ path, content }", about: "Create or overwrite a file anywhere on the system — snapshotted first, so it's undoable.", policy: Decision::Ask, mutating: true },
                 ToolSpec { cap: "fs", tool: "stat", args: "{ path }", about: "Identify a file or folder without opening it: kind (document/image/audio/video/…), size, age, and media details (duration, dimensions, tags) where available.", policy: Decision::Auto, mutating: false },
                 ToolSpec { cap: "fs", tool: "search", args: "{ query, path? }", about: "Find files whose text contains a query, with the matching line — for \"the document that mentioned X\". Searches text files under a folder (default: current).", policy: Decision::Auto, mutating: false },
+                ToolSpec { cap: "fs", tool: "move", args: "{ from, to }", about: "Move or rename a file — snapshotted first, so it's undoable.", policy: Decision::Ask, mutating: true },
+                ToolSpec { cap: "fs", tool: "delete", args: "{ path }", about: "Delete a file — snapshotted first, so undo restores it.", policy: Decision::Ask, mutating: true },
             ],
         }
     }
@@ -226,6 +228,42 @@ impl Registry {
                 } else {
                     Ok(format!("{} match(es) for \"{query}\":\n{}", hits.len(), hits.join("\n")))
                 }
+            }
+            ("fs", "move") => {
+                let from = s("from");
+                let from = from.trim();
+                let to = s("to");
+                let to = to.trim();
+                if from.is_empty() || to.is_empty() {
+                    anyhow::bail!("need both a 'from' and a 'to' path");
+                }
+                let (fp, tp) = (Path::new(from), Path::new(to));
+                if !fp.exists() {
+                    anyhow::bail!("{from} doesn't exist");
+                }
+                if let Some(parent) = tp.parent() {
+                    if !parent.as_os_str().is_empty() {
+                        std::fs::create_dir_all(parent)?;
+                    }
+                }
+                std::fs::rename(fp, tp).map_err(|e| anyhow::anyhow!("can't move {from} → {to}: {e}"))?;
+                Ok(format!("moved {from} → {to}"))
+            }
+            ("fs", "delete") => {
+                let path = s("path");
+                let path = path.trim();
+                if path.is_empty() {
+                    anyhow::bail!("need a path to delete");
+                }
+                let target = Path::new(path);
+                if !target.exists() {
+                    anyhow::bail!("{path} doesn't exist");
+                }
+                if target.is_dir() {
+                    anyhow::bail!("{path} is a folder — I only delete files for now");
+                }
+                std::fs::remove_file(target).map_err(|e| anyhow::anyhow!("can't delete {path}: {e}"))?;
+                Ok(format!("deleted {path}"))
             }
             _ => anyhow::bail!("unknown or unpermitted tool {cap}.{tool}"),
         }

@@ -97,16 +97,17 @@ impl Hearthd {
         self.host.has(&name) && mcp::mutating(&name)
     }
 
-    /// For a mutating tool, the single external file it changes — so the substrate guards just
-    /// that file rather than snapshotting the steward's whole home. `None` means the mutation is
-    /// home-scoped (Brain or workspace) and the whole-home snapshot already covers it.
-    fn guard_target(&self, cap: &str, tool: &str, args: &serde_json::Value) -> Option<std::path::PathBuf> {
+    /// For a mutating tool, the external files it changes — so the substrate guards just those
+    /// rather than snapshotting the steward's whole home. Empty means the mutation is home-scoped
+    /// (Brain or workspace) and the whole-home snapshot already covers it.
+    fn guard_target(&self, cap: &str, tool: &str, args: &serde_json::Value) -> Vec<std::path::PathBuf> {
+        let arg = |k: &str| {
+            args.get(k).and_then(|v| v.as_str()).map(|p| std::path::PathBuf::from(p.trim()))
+        };
         match (cap, tool) {
-            ("fs", "write") => args
-                .get("path")
-                .and_then(|v| v.as_str())
-                .map(|p| std::path::PathBuf::from(p.trim())),
-            _ => None,
+            ("fs", "write") | ("fs", "delete") => arg("path").into_iter().collect(),
+            ("fs", "move") => [arg("from"), arg("to")].into_iter().flatten().collect(),
+            _ => vec![],
         }
     }
 
@@ -236,9 +237,11 @@ impl Hearthd {
                 if run_it {
                     if self.mutates(cap, tool) {
                         let summary = format!("{cap}.{tool}");
-                        let (txid, r) = match self.guard_target(cap, tool, args) {
-                            Some(t) => self.substrate.guard_file(&t, &summary, || self.execute_tool(cap, tool, args))?,
-                            None => self.substrate.transact(&summary, || self.execute_tool(cap, tool, args))?,
+                        let targets = self.guard_target(cap, tool, args);
+                        let (txid, r) = if targets.is_empty() {
+                            self.substrate.transact(&summary, || self.execute_tool(cap, tool, args))?
+                        } else {
+                            self.substrate.guard_paths(&targets, &summary, || self.execute_tool(cap, tool, args))?
                         };
                         sr.snapshot = Some(txid);
                         sr.result = Some(r);
