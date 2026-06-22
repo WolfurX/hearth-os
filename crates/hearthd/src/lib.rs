@@ -426,6 +426,35 @@ impl Hearthd {
         Ok(())
     }
 
+    /// Voice conversation: listen on the mic, transcribe, run the turn, speak the reply, repeat.
+    /// Each cycle records a fixed window; say "stop listening" (or Ctrl-C) to end. The mic + STT
+    /// engines live on Arch (`alsa-utils` + `whisper.cpp` + `HEARTH_WHISPER_MODEL`); elsewhere this
+    /// reports what to install and exits. Transcripts feed the same loop a typed intent would.
+    pub fn listen(&self, seconds: u32, approve: bool) -> Result<()> {
+        println!("· listening — I'll capture {seconds}s at a time. Say \"stop listening\" to end.\n");
+        loop {
+            println!("· (speak now — {seconds}s)");
+            let heard = match voice::listen_once(seconds) {
+                Ok(Some(text)) => text,
+                Ok(None) => continue, // silence — listen again
+                Err(e) => {
+                    eprintln!("· voice input unavailable: {e}");
+                    return Ok(());
+                }
+            };
+            println!("› you: {heard}");
+            let lower = heard.to_lowercase();
+            if lower.contains("stop listening") || lower.contains("goodbye") {
+                voice::speak("Goodbye.");
+                println!("· done listening.");
+                break;
+            }
+            self.run(&heard, approve, true)?;
+            println!();
+        }
+        Ok(())
+    }
+
     /// The Brain's curated pages, for the UI's "what do you know about me?" view.
     pub fn brain_pages(&self) -> Result<Vec<BrainPage>> {
         let mut out = vec![];

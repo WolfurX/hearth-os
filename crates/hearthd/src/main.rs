@@ -49,6 +49,16 @@ enum Cmd {
         #[arg(long)]
         ui: Option<PathBuf>,
     },
+    /// Talk by voice: listen on the mic, reply aloud, repeat (Arch: needs alsa-utils +
+    /// whisper.cpp + HEARTH_WHISPER_MODEL).
+    Listen {
+        /// Seconds to record per turn.
+        #[arg(long, default_value = "6")]
+        seconds: u32,
+        /// Approve actions that would otherwise ask first.
+        #[arg(long)]
+        yes: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -87,6 +97,9 @@ fn main() -> Result<()> {
         }
         Cmd::Serve { addr, ui } => {
             hearthd::server::serve(h, &addr, ui)?;
+        }
+        Cmd::Listen { seconds, yes } => {
+            h.listen(seconds, yes)?;
         }
     }
     Ok(())
