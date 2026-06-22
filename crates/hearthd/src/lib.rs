@@ -12,6 +12,7 @@ pub mod server;
 pub mod planner;
 pub mod prompt;
 pub mod surface;
+pub mod voice;
 
 use anyhow::Result;
 use capability::{Decision, Registry};
@@ -383,8 +384,9 @@ impl Hearthd {
         }
     }
 
-    /// One turn, printed for the CLI (the glass box, on the terminal).
-    pub fn run(&self, intent: &str, approve: bool) -> Result<()> {
+    /// One turn, printed for the CLI (the glass box, on the terminal). With `speak`, the steward
+    /// also voices its reply aloud (the `respond.say` text) through the system's TTS.
+    pub fn run(&self, intent: &str, approve: bool, speak: bool) -> Result<()> {
         let r = self.turn(intent, approve)?;
         if !r.recalled.is_empty() {
             println!("· recalled from memory: {}", r.recalled.join(", "));
@@ -410,6 +412,16 @@ impl Hearthd {
                     println!("   → {res}");
                 }
             }
+        }
+        if speak {
+            let said = r
+                .steps
+                .iter()
+                .filter(|s| s.capability == "respond" && s.tool == "say" && s.ran)
+                .filter_map(|s| s.result.as_deref())
+                .collect::<Vec<_>>()
+                .join(". ");
+            voice::speak(&said);
         }
         Ok(())
     }

@@ -27,6 +27,9 @@ enum Cmd {
         /// Approve actions that would otherwise ask first.
         #[arg(long)]
         yes: bool,
+        /// Speak the reply aloud (system text-to-speech).
+        #[arg(long)]
+        speak: bool,
         /// What you want.
         intent: Vec<String>,
     },
@@ -63,11 +66,11 @@ fn main() -> Result<()> {
             println!("      hearthd do \"remember I take my coffee black\" --yes");
         }
         Cmd::Prompt => println!("{}", h.system_prompt()?),
-        Cmd::Do { yes, intent } => {
+        Cmd::Do { yes, speak, intent } => {
             if intent.is_empty() {
                 anyhow::bail!("tell me what you'd like: hearthd do \"…\"");
             }
-            h.run(&intent.join(" "), yes)?;
+            h.run(&intent.join(" "), yes, speak)?;
         }
         Cmd::Undo { id } => {
             let t = h.substrate.undo(id)?;
