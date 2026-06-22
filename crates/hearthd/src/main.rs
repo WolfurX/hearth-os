@@ -59,6 +59,8 @@ enum Cmd {
         #[arg(long)]
         yes: bool,
     },
+    /// The steward's return: review what happened since you last looked.
+    Review,
 }
 
 fn main() -> Result<()> {
@@ -101,6 +103,40 @@ fn main() -> Result<()> {
         Cmd::Listen { seconds, yes } => {
             h.listen(seconds, yes)?;
         }
+        Cmd::Review => {
+            let r = h.review()?;
+            if r.acted.is_empty() && r.asked.is_empty() && r.learned.is_empty() {
+                println!("· nothing new since your last visit.");
+            } else {
+                println!("Welcome back. While you were away:");
+                if !r.acted.is_empty() {
+                    println!("  · I handled {} thing(s) on my own — {}", r.acted.len(), distinct(&r.acted));
+                }
+                if !r.asked.is_empty() {
+                    println!("  · I asked you first on {} — {}", r.asked.len(), distinct(&r.asked));
+                }
+                for l in &r.learned {
+                    println!("  · I learned: {l}");
+                }
+            }
+            h.mark_reviewed(r.up_to)?;
+        }
     }
     Ok(())
+}
+
+/// Distinct items with counts, e.g. `"fs.write ×2, fs.move"`.
+fn distinct(items: &[String]) -> String {
+    let mut counts: Vec<(String, usize)> = vec![];
+    for it in items {
+        match counts.iter_mut().find(|(n, _)| n == it) {
+            Some(e) => e.1 += 1,
+            None => counts.push((it.clone(), 1)),
+        }
+    }
+    counts
+        .iter()
+        .map(|(n, c)| if *c > 1 { format!("{n} ×{c}") } else { n.clone() })
+        .collect::<Vec<_>>()
+        .join(", ")
 }

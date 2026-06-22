@@ -456,6 +456,53 @@ impl Hearthd {
         Ok(())
     }
 
+    /// The steward's return (canonical state 6): a review of what happened since the owner last
+    /// looked — what was handled on standing trust vs. asked about, and what was learned. Reads the
+    /// raw log since a review cursor; [`Self::mark_reviewed`] advances it once shown. Reads and
+    /// replies aren't "actions" here; memory writes surface under what was learned.
+    pub fn review(&self) -> Result<Review> {
+        let cursor = hearth_brain::log::read_cursor(&self.review_cursor_path())?;
+        let events = hearth_brain::log::since(&self.brain.log_path(), cursor)?;
+        let up_to = events.last().map(|e| e.id).unwrap_or(cursor);
+        let (mut acted, mut asked, mut learned) = (vec![], vec![], vec![]);
+        for e in &events {
+            match e.kind {
+                hearth_brain::log::Kind::Action => {
+                    let Some(rest) = e.text.strip_prefix("hearthd ran ") else { continue };
+                    let tool = rest.split_whitespace().next().unwrap_or("");
+                    let (cap, t) = tool.split_once('.').unwrap_or((tool, ""));
+                    if cap == "brain" || !self.mutates(cap, t) {
+                        continue; // memory writes show under "learned"; reads/replies aren't actions
+                    }
+                    if matches!(self.registry.policy(cap, t), Decision::Ask) {
+                        asked.push(tool.to_string());
+                    } else {
+                        acted.push(tool.to_string());
+                    }
+                }
+                hearth_brain::log::Kind::Interaction => {} // the owner's own words, not the steward's doing
+                _ => learned.push(e.text.clone()),
+            }
+        }
+        // a turn can record the same learning twice; show each once, in order
+        let mut seen = std::collections::HashSet::new();
+        learned.retain(|l| seen.insert(l.clone()));
+        Ok(Review { acted, asked, learned, up_to })
+    }
+
+    /// Mark the review cursor at `id` — everything up to here has been seen.
+    pub fn mark_reviewed(&self, id: u64) -> Result<()> {
+        hearth_brain::log::write_cursor(&self.review_cursor_path(), id)
+    }
+
+    fn review_cursor_path(&self) -> PathBuf {
+        self.brain
+            .root
+            .parent()
+            .map(|p| p.join(".review-cursor"))
+            .unwrap_or_else(|| PathBuf::from(".review-cursor"))
+    }
+
     /// The Brain's curated pages, for the UI's "what do you know about me?" view.
     pub fn brain_pages(&self) -> Result<Vec<BrainPage>> {
         let mut out = vec![];
@@ -520,6 +567,19 @@ pub struct TurnResult {
     pub planner: String,
     pub summary: String,
     pub steps: Vec<StepResult>,
+}
+
+/// The steward's return (state 6): what happened since the owner last looked.
+#[derive(serde::Serialize)]
+pub struct Review {
+    /// Consequential actions taken on standing trust (Auto) — `cap.tool` names.
+    pub acted: Vec<String>,
+    /// Consequential actions the steward paused to ask about (Ask).
+    pub asked: Vec<String>,
+    /// What the steward learned and kept (memory additions, as text).
+    pub learned: Vec<String>,
+    /// The log id this review covers up to — the new cursor.
+    pub up_to: u64,
 }
 
 #[derive(serde::Serialize)]
