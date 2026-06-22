@@ -111,6 +111,67 @@ impl Hearthd {
         }
     }
 
+    /// Pull owner-memory into the turn's context — **semantic recall**. A small brain is handed
+    /// over whole (the model applies it by meaning — nothing missed, no extra call); a large one
+    /// is narrowed by the model itself (which facts are relevant), falling back to keyword overlap
+    /// when offline. Returns (pages drawn from, the bullet text to inject).
+    fn recall_context(&self, intent: &str, model: Option<&hearth_model::HttpModel>) -> (Vec<String>, String) {
+        let pages = self.brain_pages().unwrap_or_default();
+        let mut bullets: Vec<(String, String)> = vec![];
+        for p in &pages {
+            for b in &p.bullets {
+                bullets.push((p.name.clone(), b.clone()));
+            }
+        }
+        if bullets.is_empty() {
+            return (vec![], "- (nothing yet)".to_string());
+        }
+        // small enough to hand over whole — perfect recall, the model filters by relevance
+        let total: usize = bullets.iter().map(|(_, b)| b.len()).sum();
+        if total <= 2400 {
+            let names = pages.iter().filter(|p| !p.bullets.is_empty()).map(|p| p.name.clone()).collect();
+            let known = bullets.iter().map(|(_, b)| format!("- {b}")).collect::<Vec<_>>().join("\n");
+            return (names, known);
+        }
+        // large brain: let the model pick what's relevant (semantic selection)
+        if let Some(m) = model {
+            use hearth_model::{Completion, Model};
+            let numbered = bullets
+                .iter()
+                .enumerate()
+                .map(|(i, (_, b))| format!("{}. {b}", i + 1))
+                .collect::<Vec<_>>()
+                .join("\n");
+            let sys = "You pick which remembered facts are relevant to the owner's request. Reply \
+                       with ONLY the relevant numbers, comma-separated (e.g. \"2, 5\"), or \"none\".";
+            let prompt = format!("Request: {intent}\n\nRemembered facts:\n{numbered}\n\nRelevant numbers:");
+            if let Ok(raw) = m.complete(&Completion::new(sys, prompt)) {
+                let picks: Vec<usize> = raw
+                    .split(|c: char| !c.is_ascii_digit())
+                    .filter_map(|s| s.parse::<usize>().ok())
+                    .filter(|n| *n >= 1 && *n <= bullets.len())
+                    .map(|n| n - 1)
+                    .collect();
+                if !picks.is_empty() {
+                    let mut names: Vec<String> = picks.iter().map(|&i| bullets[i].0.clone()).collect();
+                    names.sort();
+                    names.dedup();
+                    let known = picks.iter().map(|&i| format!("- {}", bullets[i].1)).collect::<Vec<_>>().join("\n");
+                    return (names, known);
+                }
+            }
+        }
+        // offline / nothing selected: keyword-overlap floor
+        let mem = hearth_brain::recall::recall(&self.brain.wiki_dir(), intent, 3).unwrap_or_default();
+        let names = mem.iter().map(|h| h.page.clone()).collect();
+        let known = if mem.is_empty() {
+            "- (nothing clearly relevant)".to_string()
+        } else {
+            mem.iter().map(|h| format!("- {}", h.snippet)).collect::<Vec<_>>().join("\n")
+        };
+        (names, known)
+    }
+
     /// Run a tool — in-process if we serve it, otherwise over MCP.
     fn execute_tool(&self, cap: &str, tool: &str, args: &serde_json::Value) -> Result<String> {
         if self.registry.knows(cap, tool) {
@@ -160,13 +221,8 @@ impl Hearthd {
     ) -> Result<TurnResult> {
         // context: the constitution + what we already know about the owner
         let system = self.system_prompt()?;
-        let mem = hearth_brain::recall::recall(&self.brain.wiki_dir(), intent, 2)?;
-        let recalled: Vec<String> = mem.iter().map(|h| h.page.clone()).collect();
-        let known = if mem.is_empty() {
-            "- (nothing relevant yet)".to_string()
-        } else {
-            mem.iter().map(|h| format!("- {}", h.snippet)).collect::<Vec<_>>().join("\n")
-        };
+        let model = hearth_model::HttpModel::from_env().ok();
+        let (recalled, known) = self.recall_context(intent, model.as_ref());
         emit(&StreamEvent::Recalled { recalled: &recalled });
         let full_system =
             format!("{system}\n\nWhat you already know about the owner (from memory):\n{known}");
@@ -175,7 +231,6 @@ impl Hearthd {
         // chains steps, *seeing each result before deciding the next*; the heuristic floor stays
         // one-shot. The loop ends when the steward gives its final answer (respond.say), needs
         // the owner's approval, has nothing left to do, or hits the step ceiling.
-        let model = hearth_model::HttpModel::from_env().ok();
         let max_iters = if model.is_some() { 5 } else { 1 };
         let mut planner = "heuristic".to_string();
         let mut summary = String::new();
