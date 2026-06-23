@@ -68,6 +68,21 @@ pub struct ForgetRequest {
     pub page: String,
 }
 
+/// Fire one capability directly — what a surface `actions` button with a `run` binding sends, so a
+/// button executes that exact gated action without re-planning (the symmetric human/agent path).
+/// Carried by `POST /api/action`; answered with a [`StepResult`] (held if it would `ask`).
+#[derive(Debug, Default, Deserialize)]
+pub struct ActionRequest {
+    #[serde(default)]
+    pub capability: String,
+    #[serde(default)]
+    pub tool: String,
+    #[serde(default)]
+    pub args: serde_json::Value,
+    #[serde(default)]
+    pub approve: bool,
+}
+
 // ── Runtime → shell (outbound) + render contract ────────────────────────────
 // Re-exported here so the whole contract is discoverable in one module. Their definitions live
 // next to the code that produces them; this is the index.
@@ -85,6 +100,7 @@ pub fn descriptor() -> serde_json::Value {
         "server_events": ["recalled", "plan", "step", "surface", "done", "error"],
         "endpoints": {
             "POST /api/intent": "{intent, approve} → ndjson stream of server_events",
+            "POST /api/action": "{capability, tool, args, approve} → run one gated action directly",
             "POST /api/surface/event": "{node, kind, value} → recorded surface edit",
             "POST /api/forget": "{page} → snapshot-first forget",
             "GET /api/brain": "curated memory pages",

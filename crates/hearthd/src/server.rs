@@ -130,6 +130,13 @@ fn respond(
         ("GET", "/api/brain") => json_result(h.brain_pages()),
         ("GET", "/api/surface") => json_result(anyhow::Ok(crate::surface::Surface::reference())),
         ("GET", "/api/protocol") => json_result(anyhow::Ok(crate::protocol::descriptor())),
+        ("POST", "/api/action") => {
+            let req: crate::protocol::ActionRequest = serde_json::from_slice(body).unwrap_or_default();
+            if req.capability.is_empty() || req.tool.is_empty() {
+                return ("400 Bad Request", "application/json", br#"{"error":"need capability and tool"}"#.to_vec());
+            }
+            json_result(h.invoke(&req.capability, &req.tool, &req.args, req.approve))
+        }
         ("POST", "/api/surface/event") => {
             let edit: crate::protocol::SurfaceEdit = serde_json::from_slice(body).unwrap_or_default();
             let node = if edit.node.is_empty() { "note".to_string() } else { edit.node };

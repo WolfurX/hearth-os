@@ -117,11 +117,27 @@ pub struct Tile {
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Action {
     pub label: String,
-    /// The intent this button hands back to the steward when pressed.
+    /// A natural-language request handed back to the steward (it re-plans). Use this OR `run`.
+    #[serde(default)]
     pub intent: String,
+    /// A direct, gated capability call — fires the exact action without re-planning (the symmetric
+    /// human/agent path: the shell POSTs it to `/api/action`). Use for a concrete known action;
+    /// `intent` for an open-ended one.
+    #[serde(default)]
+    pub run: Option<DirectAction>,
     /// Render as the warm primary action (vs. a quiet link).
     #[serde(default)]
     pub primary: bool,
+}
+
+/// A button's direct capability binding — pressed, it runs through the same gate, snapshot, and
+/// audit as any other invocation (via [`crate::Hearthd::invoke`]).
+#[derive(Serialize, Deserialize, Clone)]
+pub struct DirectAction {
+    pub capability: String,
+    pub tool: String,
+    #[serde(default)]
+    pub args: serde_json::Value,
 }
 
 impl Surface {
@@ -175,11 +191,13 @@ impl Surface {
                         Action {
                             label: "What do you know about me?".into(),
                             intent: "what do you know about me?".into(),
+                            run: None,
                             primary: true,
                         },
                         Action {
                             label: "Remember I prefer concise replies".into(),
                             intent: "remember I prefer concise replies".into(),
+                            run: None,
                             primary: false,
                         },
                     ],
@@ -221,7 +239,7 @@ Each node is exactly one of:\n\
 {\"node\":\"list\",\"items\":[\"...\"]}\n\
 {\"node\":\"fields\",\"rows\":[{\"key\":\"...\",\"value\":\"...\"}]}\n\
 {\"node\":\"tiles\",\"tiles\":[{\"title\":\"...\",\"caption\":\"...\"}]}\n\
-{\"node\":\"actions\",\"actions\":[{\"label\":\"...\",\"intent\":\"...\",\"primary\":true}]}  (pressing a button sends \"intent\" back to you)\n\
+{\"node\":\"actions\",\"actions\":[{\"label\":\"...\",\"intent\":\"...\",\"primary\":true}]}  (a button hands \"intent\" back to you to act on; for a concrete known action, give it \"run\":{\"capability\":\"..\",\"tool\":\"..\",\"args\":{}} instead of \"intent\", to fire that exact gated action without re-planning)\n\
 {\"node\":\"note\",\"label\":\"...\",\"value\":\"\"}  (an editable field the owner can write in)\n\
 {\"node\":\"image\",\"path\":\"/abs/path\",\"caption\":\"...\"}  (the shell shows the image)\n\
 {\"node\":\"audio\",\"path\":\"/abs/path\",\"title\":\"...\",\"artist\":\"...\",\"duration\":\"3:24\"}  (the shell plays it with transport controls)\n\
