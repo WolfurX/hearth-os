@@ -77,6 +77,8 @@ enum Cmd {
         /// The name to give the steward.
         name: Option<String>,
     },
+    /// The hearth at rest: a calm, glanceable briefing.
+    Briefing,
 }
 
 fn main() -> Result<()> {
@@ -163,6 +165,19 @@ fn main() -> Result<()> {
                 None => println!("· Not named yet — `hearthd name <name>` to name me (the first meeting)."),
             },
         },
+        Cmd::Briefing => {
+            let b = h.briefing()?;
+            println!("{}", b.greeting);
+            if !b.knows.is_empty() {
+                println!("\nHolding for you:");
+                for k in &b.knows {
+                    println!("  · {k}");
+                }
+            }
+            if let Some(r) = &b.recent {
+                println!("\n{r}");
+            }
+        }
     }
     Ok(())
 }

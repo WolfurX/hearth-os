@@ -551,6 +551,30 @@ impl Hearthd {
             .unwrap_or_else(|| PathBuf::from(".review-cursor"))
     }
 
+    /// The hearth at rest (canonical state 2): a calm, glanceable briefing — a warm greeting in the
+    /// steward's name, a few things it's holding for the owner (from memory), and whether anything
+    /// happened since the owner last looked. Read-only; it does not advance the review cursor.
+    pub fn briefing(&self) -> Result<Briefing> {
+        let greeting = match self.steward_name() {
+            Some(n) => format!("{n}, at the hearth — here when you need me."),
+            None => "Your steward, at the hearth — here when you need me.".to_string(),
+        };
+        let pages = self.brain_pages().unwrap_or_default();
+        let knows: Vec<String> = pages.iter().filter_map(|p| p.bullets.first().cloned()).take(4).collect();
+        let r = self.review()?;
+        let recent = if r.acted.is_empty() && r.asked.is_empty() && r.learned.is_empty() {
+            None
+        } else {
+            Some(format!(
+                "Since you last looked: {} handled, {} asked, {} learned.",
+                r.acted.len(),
+                r.asked.len(),
+                r.learned.len()
+            ))
+        };
+        Ok(Briefing { greeting, knows, recent })
+    }
+
     /// The Brain's curated pages, for the UI's "what do you know about me?" view.
     pub fn brain_pages(&self) -> Result<Vec<BrainPage>> {
         let mut out = vec![];
@@ -615,6 +639,17 @@ pub struct TurnResult {
     pub planner: String,
     pub summary: String,
     pub steps: Vec<StepResult>,
+}
+
+/// The hearth at rest (state 2): a calm, glanceable briefing.
+#[derive(serde::Serialize)]
+pub struct Briefing {
+    /// A warm greeting, in the steward's name.
+    pub greeting: String,
+    /// A few things the steward is holding for the owner (memory highlights).
+    pub knows: Vec<String>,
+    /// A one-line note on activity since the owner last looked, if any.
+    pub recent: Option<String>,
 }
 
 /// The steward's return (state 6): what happened since the owner last looked.
