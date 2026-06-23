@@ -87,3 +87,23 @@ fn transcribe(wav: &Path) -> Result<String> {
         .collect::<Vec<_>>()
         .join(" "))
 }
+
+/// Transcribe the speech in any media file (video or audio): extract/convert its audio to 16 kHz
+/// mono with ffmpeg, then run whisper over it. This is how the steward learns a clip's *content* —
+/// what it is about — beyond what `fs.stat` reads from metadata. Needs ffmpeg + whisper.cpp.
+pub fn transcribe_media(path: &Path) -> Result<String> {
+    let wav = std::env::temp_dir().join("hearth-media-stt.wav");
+    let status = Command::new("ffmpeg")
+        .args(["-y", "-loglevel", "error", "-i"])
+        .arg(path)
+        .args(["-vn", "-ar", "16000", "-ac", "1"])
+        .arg(&wav)
+        .status()
+        .map_err(|e| anyhow!("ffmpeg not available: {e}"))?;
+    if !status.success() {
+        bail!("couldn't extract audio from {}", path.display());
+    }
+    let text = transcribe(&wav);
+    let _ = std::fs::remove_file(&wav);
+    text
+}

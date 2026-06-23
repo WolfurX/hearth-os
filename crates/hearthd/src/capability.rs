@@ -51,6 +51,7 @@ impl Default for Registry {
                 ToolSpec { cap: "fs", tool: "search", args: "{ query, path? }", about: "Find files whose text contains a query, with the matching line — for \"the document that mentioned X\". Searches text files under a folder (default: current).", policy: Decision::Auto, mutating: false },
                 ToolSpec { cap: "fs", tool: "move", args: "{ from, to }", about: "Move or rename a file — snapshotted first, so it's undoable.", policy: Decision::Ask, mutating: true },
                 ToolSpec { cap: "fs", tool: "delete", args: "{ path }", about: "Delete a file — snapshotted first, so undo restores it.", policy: Decision::Ask, mutating: true },
+                ToolSpec { cap: "video", tool: "context", args: "{ path }", about: "Understand what a video or audio file is about by transcribing its spoken content (needs ffmpeg + whisper).", policy: Decision::Auto, mutating: false },
             ],
         }
     }
@@ -264,6 +265,24 @@ impl Registry {
                 }
                 std::fs::remove_file(target).map_err(|e| anyhow::anyhow!("can't delete {path}: {e}"))?;
                 Ok(format!("deleted {path}"))
+            }
+            ("video", "context") => {
+                let path = s("path");
+                let path = path.trim();
+                if path.is_empty() {
+                    anyhow::bail!("need a video or audio path");
+                }
+                let p = Path::new(path);
+                if !p.exists() {
+                    anyhow::bail!("{path} doesn't exist");
+                }
+                let transcript = crate::voice::transcribe_media(p)?;
+                if transcript.trim().is_empty() {
+                    Ok(format!("{path}: no speech detected"))
+                } else {
+                    let shown: String = transcript.chars().take(4000).collect();
+                    Ok(format!("{path} — spoken content:\n{shown}"))
+                }
             }
             _ => anyhow::bail!("unknown or unpermitted tool {cap}.{tool}"),
         }
