@@ -72,6 +72,11 @@ enum Cmd {
         #[arg(long)]
         yes: bool,
     },
+    /// Name the steward — the first meeting. Omit the name to show it.
+    Name {
+        /// The name to give the steward.
+        name: Option<String>,
+    },
 }
 
 fn main() -> Result<()> {
@@ -148,6 +153,16 @@ fn main() -> Result<()> {
                 println!("⏸ {}.{} needs approval — re-run with --yes", sr.capability, sr.tool);
             }
         }
+        Cmd::Name { name } => match name {
+            Some(n) => {
+                h.set_steward_name(&n)?;
+                println!("· Named. I'm {n} now.");
+            }
+            None => match h.steward_name() {
+                Some(n) => println!("{n}"),
+                None => println!("· Not named yet — `hearthd name <name>` to name me (the first meeting)."),
+            },
+        },
     }
     Ok(())
 }

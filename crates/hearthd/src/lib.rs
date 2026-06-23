@@ -62,9 +62,38 @@ impl Hearthd {
     }
 
     /// The assembled system prompt for the active tier — the glass-box "show me what you
-    /// were told."
+    /// were told." The steward's given name (the first meeting) is folded in here.
     pub fn system_prompt(&self) -> Result<String> {
-        prompt::assemble(&self.prompt_dir, self.tier, &self.tool_list())
+        let mut s = prompt::assemble(&self.prompt_dir, self.tier, &self.tool_list())?;
+        match self.steward_name() {
+            Some(name) => s.push_str(&format!(
+                "\n\n## Your name\nThe owner has named you **{name}** — that is who you are. Answer to it."
+            )),
+            None => s.push_str(
+                "\n\n## Your name\nYou have not been named yet — this is the first meeting. Until the \
+                 owner names you, call yourself simply the steward.",
+            ),
+        }
+        Ok(s)
+    }
+
+    /// Where the steward's given name is stored — a sibling of the Brain in the home (`~/.hearth/name`).
+    fn name_path(&self) -> PathBuf {
+        self.brain.root.parent().map(|p| p.join("name")).unwrap_or_else(|| PathBuf::from(".hearth-name"))
+    }
+
+    /// The name the owner gave the steward (the first meeting), if any.
+    pub fn steward_name(&self) -> Option<String> {
+        std::fs::read_to_string(self.name_path())
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+    }
+
+    /// Give the steward its name.
+    pub fn set_steward_name(&self, name: &str) -> Result<()> {
+        std::fs::write(self.name_path(), name.trim())?;
+        Ok(())
     }
 
     /// The full tool list — in-process plus the federated MCP tools — for the prompt and
