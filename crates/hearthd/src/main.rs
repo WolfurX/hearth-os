@@ -61,6 +61,17 @@ enum Cmd {
     },
     /// The steward's return: review what happened since you last looked.
     Review,
+    /// Run a single capability directly — the same gated, undoable path the steward uses.
+    Run {
+        /// The capability and tool, e.g. `fs.read` or `brain.recall`.
+        tool: String,
+        /// JSON arguments, e.g. `{"path":"./Cargo.toml"}`.
+        #[arg(long, default_value = "{}")]
+        args: String,
+        /// Approve if it would otherwise ask first.
+        #[arg(long)]
+        yes: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -120,6 +131,22 @@ fn main() -> Result<()> {
                 }
             }
             h.mark_reviewed(r.up_to)?;
+        }
+        Cmd::Run { tool, args, yes } => {
+            let (cap, t) = tool.split_once('.').unwrap_or((tool.as_str(), ""));
+            let args: serde_json::Value =
+                serde_json::from_str(&args).map_err(|e| anyhow::anyhow!("bad --args JSON: {e}"))?;
+            let sr = h.invoke(cap, t, &args, yes)?;
+            if sr.ran {
+                if let Some(tx) = sr.snapshot {
+                    println!("✓ snapshot tx-{tx} taken first — `hearthd undo` reverts this");
+                }
+                println!("→ {}", sr.result.as_deref().unwrap_or(""));
+            } else if sr.decision == "forbid" {
+                println!("✗ {}.{} is not permitted", sr.capability, sr.tool);
+            } else {
+                println!("⏸ {}.{} needs approval — re-run with --yes", sr.capability, sr.tool);
+            }
         }
     }
     Ok(())

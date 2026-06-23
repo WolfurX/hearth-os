@@ -113,6 +113,51 @@ impl Hearthd {
         }
     }
 
+    /// The single gated, snapshotted, audited execution path for one capability — the **universal
+    /// entry point**. The steward's loop, the CLI (`hearthd run`), and direct surface actions all
+    /// go through here, so the gate, the undo snapshot, and the audit are identical no matter who
+    /// invokes it. Returns a [`StepResult`] describing what happened — including a held (`ask`,
+    /// not approved) or refused (`forbid`) action, which is recorded but not run.
+    pub fn invoke(&self, capability: &str, tool: &str, args: &serde_json::Value, approve: bool) -> Result<StepResult> {
+        let (cap, tool) = self.resolve(capability, tool);
+        let (cap, tool) = (cap.as_str(), tool.as_str());
+        let decision = self.decide(cap, tool);
+        let mut sr = StepResult {
+            capability: cap.to_string(),
+            tool: tool.to_string(),
+            why: String::new(),
+            decision: format!("{decision:?}").to_lowercase(),
+            ran: false,
+            snapshot: None,
+            result: None,
+        };
+        let run_it = !matches!(decision, Decision::Forbid)
+            && !(matches!(decision, Decision::Ask) && !approve);
+        if run_it {
+            if self.mutates(cap, tool) {
+                let summary = format!("{cap}.{tool}");
+                let targets = self.guard_target(cap, tool, args);
+                let (txid, r) = if targets.is_empty() {
+                    self.substrate.transact(&summary, || self.execute_tool(cap, tool, args))?
+                } else {
+                    self.substrate.guard_paths(&targets, &summary, || self.execute_tool(cap, tool, args))?
+                };
+                sr.snapshot = Some(txid);
+                sr.result = Some(r);
+            } else {
+                sr.result = Some(self.execute_tool(cap, tool, args)?);
+            }
+            sr.ran = true;
+            let _ = hearth_brain::log::append(
+                &self.brain.log_path(),
+                hearth_brain::log::Kind::Action,
+                &format!("hearthd ran {cap}.{tool} {args}"),
+                vec!["hearthd".into()],
+            );
+        }
+        Ok(sr)
+    }
+
     /// Pull owner-memory into the turn's context — **semantic recall**. A small brain is handed
     /// over whole (the model applies it by meaning — nothing missed, no extra call); a large one
     /// is narrowed by the model itself (which facts are relevant), falling back to keyword overlap
@@ -277,46 +322,20 @@ impl Hearthd {
             // act — gated, snapshotted, audited; each completed step streams out at once
             let mut terminal = false;
             for st in &plan.steps {
-                let (rcap, rtool) = self.resolve(&st.capability, &st.tool);
-                let (cap, tool, args) = (rcap.as_str(), rtool.as_str(), &st.args);
-                let decision = self.decide(cap, tool);
-                let mut sr = StepResult {
-                    capability: cap.to_string(),
-                    tool: tool.to_string(),
-                    why: st.why.clone(),
-                    decision: format!("{decision:?}").to_lowercase(),
-                    ran: false,
-                    snapshot: None,
-                    result: None,
-                };
-                let run_it = !matches!(decision, Decision::Forbid)
-                    && !(matches!(decision, Decision::Ask) && !approve);
-                if run_it {
-                    if self.mutates(cap, tool) {
-                        let summary = format!("{cap}.{tool}");
-                        let targets = self.guard_target(cap, tool, args);
-                        let (txid, r) = if targets.is_empty() {
-                            self.substrate.transact(&summary, || self.execute_tool(cap, tool, args))?
-                        } else {
-                            self.substrate.guard_paths(&targets, &summary, || self.execute_tool(cap, tool, args))?
-                        };
-                        sr.snapshot = Some(txid);
-                        sr.result = Some(r);
-                    } else {
-                        sr.result = Some(self.execute_tool(cap, tool, args)?);
-                    }
-                    sr.ran = true;
-                    let _ = hearth_brain::log::append(
-                        &self.brain.log_path(),
-                        hearth_brain::log::Kind::Action,
-                        &format!("hearthd ran {cap}.{tool} {args}"),
-                        vec!["hearthd".into()],
-                    );
-                    transcript.push_str(&format!("- {cap}.{tool} → {}\n", sr.result.as_deref().unwrap_or("")));
-                    if cap == "respond" && tool == "say" {
+                // every action goes through the one universal entry point (gate/snapshot/audit)
+                let mut sr = self.invoke(&st.capability, &st.tool, &st.args, approve)?;
+                sr.why = st.why.clone();
+                if sr.ran {
+                    transcript.push_str(&format!(
+                        "- {}.{} → {}\n",
+                        sr.capability,
+                        sr.tool,
+                        sr.result.as_deref().unwrap_or("")
+                    ));
+                    if sr.capability == "respond" && sr.tool == "say" {
                         terminal = true; // the steward has given its final answer
                     }
-                } else if matches!(decision, Decision::Ask) {
+                } else if sr.decision == "ask" {
                     paused = true; // held for the owner's ok — the loop can't continue past this
                 }
                 emit(&StreamEvent::Step { step: &sr });
